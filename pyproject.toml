@@ -1,0 +1,42 @@
+[project]
+name = "b-hf"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "uvicorn>=0.36.0",
+  "ddgs>=9.5.2",
+  "duckduckgo-search>=8.1.1",
+  "fastapi[standard]>=0.116.1",
+  "markdownify>=1.1.0",
+  "packaging>=21.0",
+  "python-dotenv>=1.1.1",
+  "sqlalchemy>=2.0.42",
+  "agno>=2.0.7",
+  "anthropic>=0.68.0",
+  "mcp>=1.14.1",
+  "openai>=1.108.1",
+  "rich>=14.1.0",
+  "psycopg[binary]>=3.2.10",
+  "ag-ui-protocol>=0.1.9",
+  "pydantic>=2.11.9",
+  "dependency-injector>=4.48.2",
+  "alembic>=1.18.4",
+  "python-jose[cryptography]>=3.5.0",
+  "passlib[bcrypt]>=1.7.4",
+  "redis>=7.3.0",
+]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[tool.flake8]
+max-line-length = 100
+exclude = [".venv", "__pycache__", ".git"]
+per-file-ignores = ["__init__.py: F401"]
+
+[tool.pytest.ini_options]
+testpaths = ["src"]
+python_files = ["*_spec.py"]
+python_functions = ["test_*"]

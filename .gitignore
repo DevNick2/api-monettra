@@ -1,0 +1,8 @@
+.env.development
+.env.production
+.env
+.venv
+__pycache__/
+.vscode/
+.idea/
+*.swp

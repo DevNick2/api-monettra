@@ -1,0 +1,145 @@
+# name: Deploy to Production
+
+# on:
+#   push:
+#     tags:
+#       - 'v*-alfa'
+#   workflow_dispatch:
+
+# env:
+#   AWS_REGION: us-east-1
+#   ECR_REPOSITORY: prod/controle-financeiro
+#   ECS_CLUSTER: ecs-prod
+#   ECS_SERVICE: controle-financeiro-app-service
+#   ECS_TASK_DEFINITION: controle-financeiro-app
+#   CONTAINER_NAME: controle-financeiro-app
+
+# jobs:
+#   validate-tag:
+#     name: Validate Tag
+#     runs-on: ubuntu-latest
+#     if: always() && startsWith(github.ref, 'refs/tags/')
+#     steps:
+#       - name: Validate production tag
+#         run: |
+#           TAG="${{ github.ref_name }}"
+
+#           if [[ "$TAG" =~ -beta$ ]]; then
+#             echo "❌ Tag '$TAG' contém '-beta'. Use o workflow de staging."
+#             exit 1
+#           fi
+
+#           if [[ ! "$TAG" =~ ^v.*$ ]]; then
+#             echo "❌ Tag '$TAG' não corresponde ao padrão 'v*' para production"
+#             echo "Tag deve seguir o formato: v1.0.0, v1.0.0-alfa, v2.1.0, etc."
+#             exit 1
+#           fi
+
+#   build-and-push:
+#     name: Build and Push to ECR
+#     runs-on: ubuntu-latest
+#     environment: prd
+#     needs: [validate-tag]
+#     if: always() && (needs.validate-tag.result == 'success' || needs.validate-tag.result == 'skipped')
+#     outputs:
+#       image-tag: ${{ steps.meta.outputs.image }}
+#       image-digest: ${{ steps.build.outputs.digest }}
+#       version: ${{ steps.meta.outputs.version }}
+    
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+#         with:
+#           ref: ${{ github.ref_name }}
+
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_REGION }}
+
+#       - name: Login to Amazon ECR
+#         id: login-ecr
+#         uses: aws-actions/amazon-ecr-login@v2
+
+#       - name: Set image metadata
+#         id: meta
+#         run: |
+#           VERSION="${{ github.ref_name }}"
+#           IMAGE="773574016458.dkr.ecr.us-east-1.amazonaws.com/${{ env.ECR_REPOSITORY }}:$VERSION"
+#           echo "image=$IMAGE" >> $GITHUB_OUTPUT
+#           echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+#       - name: Build, tag, and push image to Amazon ECR
+#         id: build
+#         env:
+#           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+#           IMAGE_TAG: ${{ steps.meta.outputs.version }}
+#         run: |
+#           docker build -t $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG .
+#           docker tag $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+#           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG
+#           docker push $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:latest
+#           echo "digest=$(docker inspect --format='{{index .RepoDigests 0}}' $ECR_REGISTRY/${{ env.ECR_REPOSITORY }}:$IMAGE_TAG | cut -d'@' -f2)" >> $GITHUB_OUTPUT
+
+#   deploy:
+#     name: Deploy to ECS
+#     runs-on: ubuntu-latest
+#     environment: prd
+#     needs: [build-and-push]
+    
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_REGION }}
+
+#       - name: Download task definition
+#         run: |
+#           aws ecs describe-task-definition \
+#             --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+#             --query taskDefinition > task-definition.json
+
+#       - name: Fill in the new image ID in the Amazon ECS task definition
+#         id: task-def
+#         uses: aws-actions/amazon-ecs-render-task-definition@v1
+#         with:
+#           task-definition: task-definition.json
+#           container-name: ${{ env.CONTAINER_NAME }}
+#           image: ${{ needs.build-and-push.outputs.image-tag }}
+
+#       - name: Register new task definition revision
+#         id: register-task
+#         run: |
+#           aws ecs register-task-definition \
+#             --cli-input-json file://${{ steps.task-def.outputs.task-definition }} \
+#             --query 'taskDefinition.taskDefinitionArn' \
+#             --output text > task-def-arn.txt
+#           echo "task-def-arn=$(cat task-def-arn.txt)" >> $GITHUB_OUTPUT
+
+#       - name: Deploy Amazon ECS task definition
+#         run: |
+#           aws ecs update-service \
+#             --cluster ${{ env.ECS_CLUSTER }} \
+#             --service ${{ env.ECS_SERVICE }} \
+#             --task-definition ${{ steps.register-task.outputs.task-def-arn }} \
+#             --force-new-deployment
+
+#       - name: Wait for service stability
+#         run: |
+#           aws ecs wait services-stable \
+#             --cluster ${{ env.ECS_CLUSTER }} \
+#             --services ${{ env.ECS_SERVICE }}
+
+#       - name: Output deployment info
+#         run: |
+#           echo "Deployment completed successfully!"
+#           echo "Version: ${{ needs.build-and-push.outputs.version }}"
+#           echo "Environment: Production"
+#           echo "Task Definition ARN: ${{ steps.register-task.outputs.task-def-arn }}"
