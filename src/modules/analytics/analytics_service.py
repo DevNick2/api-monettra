@@ -40,60 +40,65 @@ class AnalyticsService:
         return response
 
     def get_trend_by_category(
-        self, user_id: int, month: int, year: int, category_codes: list[str] | None = None
+        self, user_id: int, year: int, category_codes: list[str] | None = None
     ) -> list[TrendAnalyticsResponse]:
-        if month == 1:
-            prev_month = 12
-            prev_year = year - 1
-        else:
-            prev_month = month - 1
-            prev_year = year
+        from datetime import date
+        from src.modules.analytics.ols_helper import OLSHelper
 
         # Resolve category_codes if they are given as strings, the repository compares UUIDs
         codes = [UUID(c) for c in category_codes] if category_codes else None
 
-        current_res, prev_res = self.repository.get_trend_by_category(
-            user_id, month, year, prev_month, prev_year, codes
-        )
+        results = self.repository.get_trend_by_category(user_id, year, codes)
+
+        today = date.today()
+        if year < today.year:
+            observed_months = 12
+        elif year > today.year:
+            observed_months = 0
+        else:
+            observed_months = today.month
 
         category_map = {}
-        for row in current_res:
-            category_map[row.category_code] = {
-                "name": row.category_name,
-                "color": row.category_color,
-                "current": row.total / 100.0 if row.total else 0.0,
-                "previous": 0.0
-            }
-            
-        for row in prev_res:
-            if row.category_code not in category_map:
-                category_map[row.category_code] = {
+        for row in results:
+            cat_code = str(row.category_code)
+            if cat_code not in category_map:
+                category_map[cat_code] = {
                     "name": row.category_name,
                     "color": row.category_color,
-                    "current": 0.0,
-                    "previous": row.total / 100.0 if row.total else 0.0
+                    "months": [0.0] * 12
                 }
-            else:
-                category_map[row.category_code]["previous"] = row.total / 100.0 if row.total else 0.0
+            m_idx = int(row.month) - 1 # 0 index
+            category_map[cat_code]["months"][m_idx] += row.total / 100.0 if row.total else 0.0
 
         response = []
         for code, data in category_map.items():
-            curr = data["current"]
-            prev = data["previous"]
+            months_data = data["months"]
             
-            if curr > prev:
-                trend = "up"
-            elif curr < prev:
-                trend = "down"
-            else:
-                trend = "stable"
+            x_vals = []
+            y_vals = []
+            for i in range(observed_months):
+                x_vals.append(float(i + 1))
+                y_vals.append(months_data[i])
                 
+            m, b, r2 = OLSHelper.calculate_linear_regression(x_vals, y_vals)
+            
+            history = list(months_data)
+            # Projetar os meses não observados
+            for i in range(observed_months, 12):
+                predicted = m * (i + 1) + b
+                history[i] = max(0.0, predicted) # evitar valores negativos
+
+            projected_total = sum(history)
+            
             response.append(TrendAnalyticsResponse(
+                category_code=code,
                 category_name=data["name"],
                 category_color=data["color"],
-                current_total=curr,
-                previous_total=prev,
-                trend=trend
+                history=history,
+                m=m,
+                b=b,
+                r2=r2,
+                projected_total=projected_total
             ))
             
         return response

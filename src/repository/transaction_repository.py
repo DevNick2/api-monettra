@@ -1,12 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from uuid import UUID
 
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import select, extract
+from sqlalchemy.orm import Session, joinedload, contains_eager
+from sqlalchemy import select, extract, func
 
 from src.schemas.transactions import TransactionSchema
 from src.schemas.categories import CategorySchema
-
 
 class TransactionRepository:
     def __init__(self, dbSession: Session):
@@ -53,3 +52,12 @@ class TransactionRepository:
     def soft_delete(self, transaction: TransactionSchema) -> None:
         transaction.deleted_at = datetime.now(timezone.utc)
         self.session.commit()
+
+    def horizon(self, user_id: int) -> list:
+        query = (
+            select(TransactionSchema)
+            .where(TransactionSchema.user_id == user_id)
+            .where(TransactionSchema.deleted_at == None)  # noqa: E711
+        )
+
+        return self.session.execute(query).scalars().all()

@@ -12,6 +12,8 @@ class AccumulatedAnalyticsResponse(BaseModel):
 class TrendAnalyticsResponse(BaseModel):
     category_name: str
     category_color: str
-    current_total: float
-    previous_total: float
-    trend: str
+    history: list[float]
+    m: float
+    b: float
+    r2: float
+    projected_total: float

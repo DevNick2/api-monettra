@@ -10,6 +10,7 @@ from src.modules.categories.categories_service import CategoriesService
 from src.modules.analytics.analytics_service import AnalyticsService
 from src.repository.analytics_repository import AnalyticsRepository
 from src.shared.services.redis_service import RedisService
+from src.modules.planning.planning_service import PlanningService
 
 from .postgres_services import PostgresServices
 
@@ -49,9 +50,6 @@ class ContainerService(containers.DeclarativeContainer):
     transaction_repository = providers.Singleton(TransactionRepository, dbSession=db)
     category_repository = providers.Singleton(CategoryRepository, dbSession=db)
     analytics_repository = providers.Singleton(AnalyticsRepository, db_session=db)
-    
-    from src.repository.planning_repository import PlanningRepository
-    planning_repository = providers.Singleton(PlanningRepository, dbSession=db)
 
     # ---------------------------------------------------------------------------
     # Cache
@@ -75,11 +73,9 @@ class ContainerService(containers.DeclarativeContainer):
         AnalyticsService,
         repository=analytics_repository,
     )
-    
-    from src.modules.planning.planning_service import PlanningService
+
     planning_service = providers.Singleton(
         PlanningService,
-        repository=planning_repository,
         transaction_repository=transaction_repository,
         cache=redis_service,
     )

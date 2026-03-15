@@ -6,12 +6,9 @@ from pydantic import BaseModel, UUID4, field_validator
 from src.modules.categories.dtos import CategoryResponse
 import re
 
-
-
 class TransactionType(str, Enum):
     INCOME = "income"
     EXPENSE = "expense"
-
 
 class CreateTransactionDTO(BaseModel):
     title: str

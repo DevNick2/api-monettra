@@ -17,12 +17,7 @@ from alembic import context
 from src.schemas.base import Base  # noqa: F401
 from src.schemas.users import UserSchema  # noqa: F401
 from src.schemas.categories import CategorySchema  # noqa: F401
-
-# Schemas opcionais — importar quando existirem
-try:
-    from src.schemas.transactions import TransactionSchema  # noqa: F401
-except ImportError:
-    pass
+from src.schemas.transactions import TransactionSchema  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Ler variáveis de ambiente do .env.development

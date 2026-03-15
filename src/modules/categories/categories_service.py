@@ -10,7 +10,7 @@ from src.repository.category_repository import CategoryRepository
 from src.shared.utils.logger import logger
 from .dtos import CreateCategoryDTO, UpdateCategoryDTO
 import asyncio
-
+from src.schemas.transactions import TransactionType
 
 class CategoriesService:
     def __init__(self, repository: CategoryRepository):
@@ -38,6 +38,7 @@ class CategoriesService:
                 "color": data.color,
                 "icon_name": data.icon_name,
                 "user_id": user_id,
+                "type": TransactionType[data.type.upper()]
             })
         except Exception as e:
             logger.error(f"Erro ao criar categoria: {e}")
@@ -56,8 +57,9 @@ class CategoriesService:
                 detail="Erro interno ao criar categoria em lote"
             )
 
-    def update(self, user_id: int, category_code: UUID, data: UpdateCategoryDTO):
-        category = self.repository.find_by_code(category_code, user_id)
+    def update(self, category_code: UUID, data: UpdateCategoryDTO):
+        category = self.repository.find_by_code(category_code)
+
         if not category:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Categoria não encontrada")
 
@@ -67,6 +69,8 @@ class CategoriesService:
             category.color = data.color
         if data.icon_name is not None:
             category.icon_name = data.icon_name
+        if data.type is not None:
+            category.type = TransactionType[data.type.upper()]
 
         return self.repository.update(category)
 

@@ -44,14 +44,13 @@ async def get_accumulated(
 @router.get(
     "/trend-by-category",
     response_model=list[TrendAnalyticsResponse],
-    summary="Tendência de categorias em relação ao mês anterior"
+    summary="Tendência de categorias ao longo do ano"
 )
 @inject
 async def get_trend_by_category(
-    month: int = Query(..., description="Mês"),
     year: int = Query(..., description="Ano"),
     category_codes: list[str] | None = Query(None, description="Lista opcional de UUIDs de categorias"),
     current_user: dict = Depends(get_current_user),
     service: AnalyticsService = Depends(Provide[ContainerService.analytics_service])
 ):
-    return service.get_trend_by_category(current_user["uid"], month, year, category_codes)
+    return service.get_trend_by_category(current_user["uid"], year, category_codes)

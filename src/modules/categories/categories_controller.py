@@ -53,7 +53,7 @@ async def update_category(
     current_user: dict = Depends(get_current_user),
     service: CategoriesService = Depends(Provide[ContainerService.categories_service])
 ):
-    return service.update(current_user["uid"], code, body)
+    return service.update(code, body)
 
 
 @router.delete(

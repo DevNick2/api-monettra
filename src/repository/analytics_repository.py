@@ -45,40 +45,27 @@ class AnalyticsRepository:
         )
         return self.session.execute(query).all()
 
-    def get_trend_by_category(self, user_id: int, month: int, year: int, previous_month: int, previous_year: int, category_codes: list[str] = None):
-        # We need to query expenses for current month and previous month for the given categories
+    def get_trend_by_category(self, user_id: int, year: int, category_codes: list[str] = None):
+        month_expr = extract("month", TransactionSchema.due_date)
         
         base_query = (
             select(
                 CategorySchema.code.label("category_code"),
                 CategorySchema.title.label("category_name"),
                 CategorySchema.color.label("category_color"),
+                month_expr.label("month"),
                 func.sum(TransactionSchema.amount).label("total")
             )
             .join(TransactionSchema.category)
             .where(TransactionSchema.user_id == user_id)
             .where(TransactionSchema.deleted_at == None)
             .where(TransactionSchema.type == TransactionType.EXPENSE)
+            .where(extract("year", TransactionSchema.due_date) == year)
         )
 
         if category_codes:
             base_query = base_query.where(CategorySchema.code.in_(category_codes))
 
-        current_query = (
-            base_query
-            .where(extract("month", TransactionSchema.due_date) == month)
-            .where(extract("year", TransactionSchema.due_date) == year)
-            .group_by(CategorySchema.code, CategorySchema.title, CategorySchema.color)
-        )
+        query = base_query.group_by(CategorySchema.code, CategorySchema.title, CategorySchema.color, month_expr).order_by(month_expr)
 
-        previous_query = (
-            base_query
-            .where(extract("month", TransactionSchema.due_date) == previous_month)
-            .where(extract("year", TransactionSchema.due_date) == previous_year)
-            .group_by(CategorySchema.code, CategorySchema.title, CategorySchema.color)
-        )
-
-        current_results = self.session.execute(current_query).all()
-        previous_results = self.session.execute(previous_query).all()
-
-        return current_results, previous_results
+        return self.session.execute(query).all()
