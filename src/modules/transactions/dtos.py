@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, UUID4, field_validator
@@ -9,6 +10,10 @@ import re
 class TransactionType(str, Enum):
     INCOME = "income"
     EXPENSE = "expense"
+
+class TransactionClassification(str, Enum):
+    DEFAULT = "default"
+    SUBSCRIPTION = "subscription"
 
 class CreateTransactionDTO(BaseModel):
     title: str
@@ -47,6 +52,44 @@ class CreateTransactionDTO(BaseModel):
         return v
 
 
+class BatchCreateTransactionDTO(BaseModel):
+    """DTO para criação em lote de transações recorrentes (server-side)."""
+    title: str
+    amount: int
+    type: TransactionType
+    start_date: date
+    category_code: UUID4 | None = None
+    description: str | None = None
+    is_paid: bool = False
+
+    @field_validator("amount", mode="before")
+    @classmethod
+    def parse_amount(cls, v):
+        if isinstance(v, str):
+            val = re.sub(r"[^\d,]", "", v)
+            if not val:
+                return 0
+            if "," in val:
+                parts = val.split(",")
+                reals = int(parts[0]) if parts[0] else 0
+                cents = int(parts[1][:2].ljust(2, "0"))
+                return reals * 100 + cents
+            else:
+                return int(val) * 100
+        elif isinstance(v, (int, float)):
+            return int(v * 100)
+        return v
+
+    @field_validator("start_date", mode="before")
+    @classmethod
+    def parse_start_date(cls, v):
+        if isinstance(v, str) and "/" in v:
+            parts = v.split("/")
+            if len(parts) == 3:
+                return date(int(parts[2]), int(parts[1]), int(parts[0]))
+        return v
+
+
 class UpdateTransactionDTO(BaseModel):
     title: str | None = None
     amount: int | None = None
@@ -55,6 +98,8 @@ class UpdateTransactionDTO(BaseModel):
     category_code: UUID4 | None = None
     description: str | None = None
     is_paid: bool | None = None
+    # Escopo de propagação: single | forward | all
+    scope: Literal["single", "forward", "all"] = "single"
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -93,12 +138,14 @@ class TransactionResponse(BaseModel):
     title: str
     amount: str
     type: TransactionType
+    type_of_transaction: TransactionClassification | None = TransactionClassification.DEFAULT
     category: CategoryResponse | None
     is_paid: bool
     paid_at: datetime | None
     due_date: str
     description: str | None
     created_at: datetime
+    recurrence_id: UUID4 | None = None
 
     model_config = {"from_attributes": True}
 

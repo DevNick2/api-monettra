@@ -34,6 +34,7 @@ async def lifespan(app: FastAPI):
         "src.modules.categories.categories_controller",
         "src.modules.analytics.analytics_controller",
         "src.modules.planning.planning_controller",
+        "src.modules.subscriptions.subscriptions_controller",
     ])
     app.include_router(router)
     yield

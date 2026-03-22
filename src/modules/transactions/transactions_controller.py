@@ -1,6 +1,7 @@
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, UploadFile, status
 from dependency_injector.wiring import Provide, inject
 
 from src.shared.services.di_services import ContainerService
@@ -8,7 +9,12 @@ from src.shared.utils.auth import get_current_user
 from src.modules.transactions.transactions_service import TransactionsService
 from src.modules.categories.categories_service import CategoriesService
 from src.schemas.categories import CategorySchema
-from .dtos import CreateTransactionDTO, UpdateTransactionDTO, TransactionResponse
+from .dtos import (
+    CreateTransactionDTO,
+    BatchCreateTransactionDTO,
+    UpdateTransactionDTO,
+    TransactionResponse,
+)
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
 
@@ -43,6 +49,21 @@ async def create_transaction(
     return service.create(current_user["uid"], body)
 
 
+@router.post(
+    "/batch",
+    response_model=list[TransactionResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Cria transações recorrentes em lote (server-side). O backend gera todas as parcelas a partir de start_date até Dezembro."
+)
+@inject
+async def create_batch_transactions(
+    body: BatchCreateTransactionDTO,
+    current_user: dict = Depends(get_current_user),
+    service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
+):
+    return service.create_batch(current_user["uid"], body)
+
+
 @router.patch(
     "/{code}/pay",
     response_model=TransactionResponse,
@@ -60,7 +81,7 @@ async def pay_transaction(
 @router.put(
     "/{code}",
     response_model=TransactionResponse,
-    summary="Atualiza uma transação"
+    summary="Atualiza uma transação. Suporta propagação via scope=single|forward|all"
 )
 @inject
 async def update_transaction(
@@ -81,12 +102,27 @@ async def update_transaction(
 @router.delete(
     "/{code}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Remove uma transação (soft delete)"
+    summary="Remove uma transação (soft delete). scope=single|forward|all controla propagação."
 )
 @inject
 async def delete_transaction(
     code: UUID,
+    scope: Literal["single", "forward", "all"] = Query(default="single"),
     current_user: dict = Depends(get_current_user),
     service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
 ):
-    service.remove(current_user["uid"], code)
+    service.remove(current_user["uid"], code, scope=scope)
+
+
+@router.post(
+    "/import/ofx",
+    status_code=status.HTTP_201_CREATED,
+    summary="Importa transações de um arquivo OFX"
+)
+@inject
+async def import_transactions(
+    file: UploadFile,
+    current_user: dict = Depends(get_current_user),
+    service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
+):
+    return await service.import_ofx(current_user["uid"], file)

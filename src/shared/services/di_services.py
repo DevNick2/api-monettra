@@ -11,6 +11,8 @@ from src.modules.analytics.analytics_service import AnalyticsService
 from src.repository.analytics_repository import AnalyticsRepository
 from src.shared.services.redis_service import RedisService
 from src.modules.planning.planning_service import PlanningService
+from src.repository.subscription_repository import SubscriptionRepository
+from src.modules.subscriptions.subscriptions_service import SubscriptionsService
 
 from .postgres_services import PostgresServices
 
@@ -76,6 +78,14 @@ class ContainerService(containers.DeclarativeContainer):
 
     planning_service = providers.Singleton(
         PlanningService,
+        transaction_repository=transaction_repository,
+        cache=redis_service,
+    )
+
+    subscription_repository = providers.Singleton(SubscriptionRepository, dbSession=db)
+    subscriptions_service = providers.Singleton(
+        SubscriptionsService,
+        repository=subscription_repository,
         transaction_repository=transaction_repository,
         cache=redis_service,
     )

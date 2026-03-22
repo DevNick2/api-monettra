@@ -14,6 +14,7 @@ from src.modules.transactions.transactions_controller import router as transacti
 from src.modules.categories.categories_controller import router as categories_router
 from src.modules.analytics.analytics_controller import router as analytics_router
 from src.modules.planning.planning_controller import router as planning_router
+from src.modules.subscriptions.subscriptions_controller import router as subscriptions_router
 
 router = APIRouter()
 
@@ -24,3 +25,4 @@ router.include_router(transactions_router)
 router.include_router(categories_router)
 router.include_router(analytics_router)
 router.include_router(planning_router)
+router.include_router(subscriptions_router)

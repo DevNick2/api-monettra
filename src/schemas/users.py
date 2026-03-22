@@ -10,6 +10,7 @@ from .base import BaseSchema
 if TYPE_CHECKING:
     from .categories import CategorySchema
     from .transactions import TransactionSchema
+    from .subscriptions import SubscriptionSchema
 
 
 class UserType(PyEnum):
@@ -34,3 +35,4 @@ class UserSchema(BaseSchema):
     # Relationships
     categories: Mapped[List["CategorySchema"]] = relationship(back_populates="user")
     transactions: Mapped[List["TransactionSchema"]] = relationship(back_populates="user")
+    subscriptions: Mapped[List["SubscriptionSchema"]] = relationship(back_populates="user")

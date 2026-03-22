@@ -10,6 +10,9 @@ from src.shared.utils.logger import logger
 
 
 class RedisService:
+    TRANSACTIONS_CACHE_PREFIX = "transactions:uid:"
+    SUBSCRIPTIONS_CACHE_PREFIX = "subscriptions:uid:"
+
     def __init__(self):
         host = environment.get("REDIS_HOST", "localhost")
         port = int(environment.get("REDIS_PORT", "6379"))
@@ -65,3 +68,4 @@ class RedisService:
                 self._client.delete(*keys)
         except Exception as e:
             logger.warning(f"Redis delete_pattern falhou para '{pattern}': {e}")
+

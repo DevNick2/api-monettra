@@ -26,6 +26,8 @@ dependencies = [
   "python-jose[cryptography]>=3.5.0",
   "passlib[bcrypt]>=1.7.4",
   "redis>=7.3.0",
+  "ofxtools>=0.9.5",
+  "python-multipart>=0.0.20",
 ]
 
 [tool.uv]
