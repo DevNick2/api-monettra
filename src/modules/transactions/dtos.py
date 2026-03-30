@@ -7,6 +7,14 @@ from pydantic import BaseModel, UUID4, field_validator
 from src.modules.categories.dtos import CategoryResponse
 import re
 
+
+class OwnerResponse(BaseModel):
+    code: UUID4
+    name: str
+    photo_url: str | None = None
+
+    model_config = {"from_attributes": True}
+
 class TransactionType(str, Enum):
     INCOME = "income"
     EXPENSE = "expense"
@@ -23,6 +31,7 @@ class CreateTransactionDTO(BaseModel):
     category_code: UUID4 | None = None
     description: str | None = None
     is_paid: bool = False
+    owner_code: UUID4 | None = None
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -61,6 +70,7 @@ class BatchCreateTransactionDTO(BaseModel):
     category_code: UUID4 | None = None
     description: str | None = None
     is_paid: bool = False
+    owner_code: UUID4 | None = None
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -98,6 +108,7 @@ class UpdateTransactionDTO(BaseModel):
     category_code: UUID4 | None = None
     description: str | None = None
     is_paid: bool | None = None
+    owner_code: UUID4 | None = None
     # Escopo de propagação: single | forward | all
     scope: Literal["single", "forward", "all"] = "single"
 
@@ -146,6 +157,12 @@ class TransactionResponse(BaseModel):
     description: str | None
     created_at: datetime
     recurrence_id: UUID4 | None = None
+    subscription_payment_method: str | None = None
+    invoice_code: UUID4 | None = None
+    invoice_reference_month: int | None = None
+    invoice_reference_year: int | None = None
+    credit_card_name: str | None = None
+    owner: OwnerResponse | None = None
 
     model_config = {"from_attributes": True}
 

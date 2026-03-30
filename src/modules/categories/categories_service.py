@@ -16,12 +16,12 @@ class CategoriesService:
     def __init__(self, repository: CategoryRepository):
         self.repository = repository
 
-    def find_all(self, user_id: int) -> list:
-        return self.repository.find_all_by_user(user_id)
+    def find_all(self, account_id: int) -> list:
+        return self.repository.find_all_by_account(account_id)
 
-    def show(self, code: str):
+    def show(self, account_id: int, code: str):
         try:
-            category = self.repository.find_by_code(code)
+            category = self.repository.find_by_code(code, account_id)
 
             return category
         except Exception as e:
@@ -31,13 +31,14 @@ class CategoriesService:
                 detail="Categoria não encontrada"
             )
 
-    def create(self, user_id: int, data: CreateCategoryDTO):
+    def create(self, user_id: int, account_id: int, data: CreateCategoryDTO):
         try:
             return self.repository.create({
                 "title": data.title,
                 "color": data.color,
                 "icon_name": data.icon_name,
                 "user_id": user_id,
+                "account_id": account_id,
                 "type": TransactionType[data.type.upper()]
             })
         except Exception as e:
@@ -46,10 +47,10 @@ class CategoriesService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Erro interno ao criar categoria"
             )
-    def create_in_lot(self, user_id: int, data: list[dict]):
+    def create_in_lot(self, user_id: int, account_id: int, data: list[dict]):
         try:
             for cat in data:
-                self.create(user_id, CreateCategoryDTO(**cat))
+                self.create(user_id, account_id, CreateCategoryDTO(**cat))
         except Exception as e:
             logger.error(f"Erro ao criar categoria em lote: {e}")
             raise HTTPException(
@@ -57,8 +58,8 @@ class CategoriesService:
                 detail="Erro interno ao criar categoria em lote"
             )
 
-    def update(self, category_code: UUID, data: UpdateCategoryDTO):
-        category = self.repository.find_by_code(category_code)
+    def update(self, account_id: int, category_code: UUID, data: UpdateCategoryDTO):
+        category = self.repository.find_by_code(category_code, account_id)
 
         if not category:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Categoria não encontrada")
@@ -74,8 +75,9 @@ class CategoriesService:
 
         return self.repository.update(category)
 
-    def remove(self, user_id: int, category_code: UUID):
-        category = self.repository.find_by_code(category_code, user_id)
+    def remove(self, account_id: int, category_code: UUID):
+        category = self.repository.find_by_code(category_code, account_id)
+
         if not category:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Categoria não encontrada")
 

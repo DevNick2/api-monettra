@@ -4,6 +4,7 @@ from datetime import date
 
 from src.shared.services.di_services import ContainerService
 from src.shared.utils.auth import get_current_user
+from src.shared.utils.dependencies import get_current_account_id
 from src.modules.analytics.analytics_service import AnalyticsService
 from .dtos import CategoryAnalyticsResponse, AccumulatedAnalyticsResponse, TrendAnalyticsResponse
 
@@ -19,10 +20,10 @@ router = APIRouter(prefix="/analytics", tags=["Analytics"])
 async def get_by_category(
     start_date: date = Query(..., description="Data de Início"),
     end_date: date = Query(..., description="Data de Fim"),
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: AnalyticsService = Depends(Provide[ContainerService.analytics_service])
 ):
-    return service.get_expenses_by_category(current_user["uid"], start_date, end_date)
+    return service.get_expenses_by_category(account_id, start_date, end_date)
 
 
 @router.get(
@@ -34,11 +35,11 @@ async def get_by_category(
 async def get_accumulated(
     start_date: date = Query(..., description="Data de Início"),
     end_date: date = Query(..., description="Data de Fim"),
-    group_by: str = Query(..., description="'day' ou 'week'"),
-    current_user: dict = Depends(get_current_user),
+    group_by: str = Query(..., description="'day', 'week' ou 'month'"),
+    account_id: int = Depends(get_current_account_id),
     service: AnalyticsService = Depends(Provide[ContainerService.analytics_service])
 ):
-    return service.get_accumulated_expenses(current_user["uid"], start_date, end_date, group_by)
+    return service.get_accumulated_expenses(account_id, start_date, end_date, group_by)
 
 
 @router.get(
@@ -50,7 +51,7 @@ async def get_accumulated(
 async def get_trend_by_category(
     year: int = Query(..., description="Ano"),
     category_codes: list[str] | None = Query(None, description="Lista opcional de UUIDs de categorias"),
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: AnalyticsService = Depends(Provide[ContainerService.analytics_service])
 ):
-    return service.get_trend_by_category(current_user["uid"], year, category_codes)
+    return service.get_trend_by_category(account_id, year, category_codes)

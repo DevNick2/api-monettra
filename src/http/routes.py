@@ -15,6 +15,9 @@ from src.modules.categories.categories_controller import router as categories_ro
 from src.modules.analytics.analytics_controller import router as analytics_router
 from src.modules.planning.planning_controller import router as planning_router
 from src.modules.subscriptions.subscriptions_controller import router as subscriptions_router
+from src.modules.accounts.accounts_controller import router as accounts_router
+from src.modules.ia_engine.ia_engine_controller import router as ia_engine_router
+from src.modules.credit_cards.credit_cards_controller import router as credit_cards_router
 
 router = APIRouter()
 
@@ -26,3 +29,6 @@ router.include_router(categories_router)
 router.include_router(analytics_router)
 router.include_router(planning_router)
 router.include_router(subscriptions_router)
+router.include_router(accounts_router)
+router.include_router(ia_engine_router)
+router.include_router(credit_cards_router)

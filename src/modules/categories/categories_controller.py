@@ -1,10 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from dependency_injector.wiring import Provide, inject
 
 from src.shared.services.di_services import ContainerService
 from src.shared.utils.auth import get_current_user
+from src.shared.utils.dependencies import get_current_account_id
 from src.modules.categories.categories_service import CategoriesService
 from .dtos import CreateCategoryDTO, UpdateCategoryDTO, CategoryResponse
 
@@ -19,10 +20,10 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
 )
 @inject
 async def list_categories(
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: CategoriesService = Depends(Provide[ContainerService.categories_service])
 ):
-    return service.find_all(current_user["uid"])
+    return service.find_all(account_id)
 
 
 @router.post(
@@ -35,9 +36,10 @@ async def list_categories(
 async def create_category(
     body: CreateCategoryDTO,
     current_user: dict = Depends(get_current_user),
-    service: CategoriesService = Depends(Provide[ContainerService.categories_service])
+    account_id: int = Depends(get_current_account_id),
+    service: CategoriesService = Depends(Provide[ContainerService.categories_service]),
 ):
-    return service.create(current_user["uid"], body)
+    return service.create(current_user["uid"], account_id, body)
 
 
 @router.put(
@@ -50,10 +52,10 @@ async def create_category(
 async def update_category(
     code: UUID,
     body: UpdateCategoryDTO,
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: CategoriesService = Depends(Provide[ContainerService.categories_service])
 ):
-    return service.update(code, body)
+    return service.update(account_id, code, body)
 
 
 @router.delete(
@@ -64,7 +66,7 @@ async def update_category(
 @inject
 async def delete_category(
     code: UUID,
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: CategoriesService = Depends(Provide[ContainerService.categories_service])
 ):
-    service.remove(current_user["uid"], code)
+    service.remove(account_id, code)

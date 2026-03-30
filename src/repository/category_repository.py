@@ -9,19 +9,20 @@ from src.schemas.categories import CategorySchema
 
 class CategoryRepository:
     def __init__(self, dbSession: Session):
-        self.session = dbSession()
+        self.session = dbSession
 
-    def find_all_by_user(self, user_id: int) -> list[CategorySchema]:
+    def find_all_by_account(self, account_id: int) -> list[CategorySchema]:
         return self.session.execute(
             select(CategorySchema)
-            .where(CategorySchema.user_id == user_id)
+            .where(CategorySchema.account_id == account_id)
             .where(CategorySchema.deleted_at == None)  # noqa: E711
         ).scalars().all()
 
-    def find_by_code(self, code: UUID) -> CategorySchema | None:
+    def find_by_code(self, code: UUID, account_id: int) -> CategorySchema | None:
         return self.session.execute(
             select(CategorySchema)
             .where(CategorySchema.code == code)
+            .where(CategorySchema.account_id == account_id)
             .where(CategorySchema.deleted_at == None)  # noqa: E711
         ).scalar_one_or_none()
 

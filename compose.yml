@@ -47,6 +47,29 @@ services:
       - /app/.venv
     restart: unless-stopped
 
+  celery-worker:
+    container_name: celery-worker
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: >
+      uv run celery -A src.shared.services.celery_app.celery_app worker
+      --loglevel=info
+      --concurrency=2
+      -Q celery
+    env_file:
+      - .env.development
+    depends_on:
+      redis:
+        condition: service_started
+      db:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - /app/.venv
+    restart: unless-stopped
+
 volumes:
   redis_data:
   postgres_data:
+

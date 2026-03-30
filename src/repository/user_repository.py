@@ -7,7 +7,7 @@ from src.schemas.users import UserSchema
 
 class UserRepository:
     def __init__(self, dbSession: Session):
-        self.session = dbSession()
+        self.session = dbSession
 
     def find_all(self):
         return self.session.execute(

@@ -9,32 +9,32 @@ from src.schemas.subscriptions import SubscriptionSchema
 
 class SubscriptionRepository:
     def __init__(self, dbSession: Session):
-        self.session = dbSession()
+        self.session = dbSession
 
-    def find_all_by_user(self, user_id: int) -> list[SubscriptionSchema]:
+    def find_all_by_account(self, account_id: int) -> list[SubscriptionSchema]:
         query = (
             select(SubscriptionSchema)
-            .where(SubscriptionSchema.user_id == user_id)
+            .where(SubscriptionSchema.account_id == account_id)
             .where(SubscriptionSchema.deleted_at == None)  # noqa: E711
             .order_by(SubscriptionSchema.created_at.desc())
         )
         return self.session.execute(query).scalars().all()
 
-    def find_active_by_user(self, user_id: int) -> list[SubscriptionSchema]:
+    def find_active_by_account(self, account_id: int) -> list[SubscriptionSchema]:
         query = (
             select(SubscriptionSchema)
-            .where(SubscriptionSchema.user_id == user_id)
+            .where(SubscriptionSchema.account_id == account_id)
             .where(SubscriptionSchema.is_active == True)  # noqa: E712
             .where(SubscriptionSchema.deleted_at == None)  # noqa: E711
             .order_by(SubscriptionSchema.created_at.desc())
         )
         return self.session.execute(query).scalars().all()
 
-    def find_by_code(self, code: UUID, user_id: int) -> SubscriptionSchema | None:
+    def find_by_code(self, code: UUID, account_id: int) -> SubscriptionSchema | None:
         return self.session.execute(
             select(SubscriptionSchema)
             .where(SubscriptionSchema.code == code)
-            .where(SubscriptionSchema.user_id == user_id)
+            .where(SubscriptionSchema.account_id == account_id)
             .where(SubscriptionSchema.deleted_at == None)  # noqa: E711
         ).scalars().first()
 

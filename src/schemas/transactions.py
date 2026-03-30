@@ -14,6 +14,8 @@ from .base import BaseSchema
 if TYPE_CHECKING:
     from .users import UserSchema
     from .categories import CategorySchema
+    from .accounts import AccountSchema
+    from .credit_cards import InvoiceSchema
 
 
 class TransactionType(PyEnum):
@@ -24,6 +26,7 @@ class TransactionType(PyEnum):
 class TransactionClassification(PyEnum):
     DEFAULT = "default"
     SUBSCRIPTION = "subscription"
+    CREDIT_CARD = "credit_card"
 
 
 class TransactionSchema(BaseSchema):
@@ -61,8 +64,36 @@ class TransactionSchema(BaseSchema):
     subscription_id: Mapped[int | None] = mapped_column(
         ForeignKey("subscriptions.id"), nullable=True
     )
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
+    # ID do usuário que criou o registro (rastreabilidade em conta compartilhada)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # FK para a fatura do cartão de crédito (nullable — ausente em transações comuns)
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoices.id"), nullable=True)
+    # Dono da transação ("de quem é essa despesa/receita na vida real")
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     # Relationships
-    user: Mapped["UserSchema"] = relationship(back_populates="transactions")
+    user: Mapped["UserSchema"] = relationship(foreign_keys=[user_id], back_populates="transactions")
     category: Mapped["CategorySchema"] = relationship(back_populates="transactions")
     subscription: Mapped["SubscriptionSchema"] = relationship(back_populates="transactions")
+    account: Mapped["AccountSchema"] = relationship(back_populates="transactions")
+    invoice: Mapped["InvoiceSchema"] = relationship(back_populates="transactions")
+    owner: Mapped["UserSchema"] = relationship(foreign_keys=[owner_id], back_populates="owned_transactions")
+
+    @property
+    def subscription_payment_method(self) -> str | None:
+        if self.subscription:
+            return self.subscription.payment_method.value
+        return None
+
+    @property
+    def invoice_reference_month(self) -> int | None:
+        return self.invoice.reference_month if self.invoice else None
+
+    @property
+    def invoice_reference_year(self) -> int | None:
+        return self.invoice.reference_year if self.invoice else None
+
+    @property
+    def credit_card_name(self) -> str | None:
+        return self.invoice.credit_card.name if self.invoice and self.invoice.credit_card else None

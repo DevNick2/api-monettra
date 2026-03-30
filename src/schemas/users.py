@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from .categories import CategorySchema
     from .transactions import TransactionSchema
     from .subscriptions import SubscriptionSchema
+    from .accounts import AccountMemberSchema
 
 
 class UserType(PyEnum):
@@ -34,5 +35,13 @@ class UserSchema(BaseSchema):
 
     # Relationships
     categories: Mapped[List["CategorySchema"]] = relationship(back_populates="user")
-    transactions: Mapped[List["TransactionSchema"]] = relationship(back_populates="user")
+    transactions: Mapped[List["TransactionSchema"]] = relationship(
+        back_populates="user",
+        foreign_keys="[TransactionSchema.user_id]"
+    )
+    owned_transactions: Mapped[List["TransactionSchema"]] = relationship(
+        back_populates="owner",
+        foreign_keys="[TransactionSchema.owner_id]"
+    )
     subscriptions: Mapped[List["SubscriptionSchema"]] = relationship(back_populates="user")
+    account_memberships: Mapped[List["AccountMemberSchema"]] = relationship(back_populates="user")

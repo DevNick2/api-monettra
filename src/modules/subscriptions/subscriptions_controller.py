@@ -5,6 +5,7 @@ from dependency_injector.wiring import Provide, inject
 
 from src.shared.services.di_services import ContainerService
 from src.shared.utils.auth import get_current_user
+from src.shared.utils.dependencies import get_current_account_id
 from src.modules.subscriptions.subscriptions_service import SubscriptionsService
 from .dtos import CreateSubscriptionDTO, UpdateSubscriptionDTO, SubscriptionResponse
 
@@ -18,10 +19,10 @@ router = APIRouter(prefix="/subscriptions", tags=["Subscriptions"])
 )
 @inject
 async def list_subscriptions(
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: SubscriptionsService = Depends(Provide[ContainerService.subscriptions_service]),
 ):
-    return service.find_all(current_user["uid"])
+    return service.find_all(account_id)
 
 
 @router.get(
@@ -31,10 +32,10 @@ async def list_subscriptions(
 )
 @inject
 async def list_active_subscriptions(
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: SubscriptionsService = Depends(Provide[ContainerService.subscriptions_service]),
 ):
-    return service.find_active(current_user["uid"])
+    return service.find_active(account_id)
 
 
 @router.post(
@@ -47,9 +48,10 @@ async def list_active_subscriptions(
 async def create_subscription(
     body: CreateSubscriptionDTO,
     current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: SubscriptionsService = Depends(Provide[ContainerService.subscriptions_service]),
 ):
-    return service.create(current_user["uid"], body)
+    return service.create(current_user["uid"], account_id, body)
 
 
 @router.patch(
@@ -60,10 +62,10 @@ async def create_subscription(
 @inject
 async def toggle_subscription(
     code: UUID,
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: SubscriptionsService = Depends(Provide[ContainerService.subscriptions_service]),
 ):
-    return service.toggle_active(current_user["uid"], code)
+    return service.toggle_active(account_id, code)
 
 
 @router.put(
@@ -75,10 +77,10 @@ async def toggle_subscription(
 async def update_subscription(
     code: UUID,
     body: UpdateSubscriptionDTO,
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: SubscriptionsService = Depends(Provide[ContainerService.subscriptions_service]),
 ):
-    return service.update(current_user["uid"], code, body)
+    return service.update(account_id, code, body)
 
 
 @router.delete(
@@ -89,7 +91,7 @@ async def update_subscription(
 @inject
 async def delete_subscription(
     code: UUID,
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: SubscriptionsService = Depends(Provide[ContainerService.subscriptions_service]),
 ):
-    service.remove(current_user["uid"], code)
+    service.remove(account_id, code)

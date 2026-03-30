@@ -27,6 +27,7 @@ db_service.connection()
 async def lifespan(app: FastAPI):
     container.wire(modules=[
         "src.http.routes",
+        "src.shared.utils.dependencies",
         "src.modules.health.health_controller",
         "src.modules.users.users_controller",
         "src.modules.auth.auth_controller",
@@ -35,6 +36,9 @@ async def lifespan(app: FastAPI):
         "src.modules.analytics.analytics_controller",
         "src.modules.planning.planning_controller",
         "src.modules.subscriptions.subscriptions_controller",
+        "src.modules.accounts.accounts_controller",
+        "src.modules.ia_engine.ia_engine_controller",
+        "src.modules.credit_cards.credit_cards_controller",
     ])
     app.include_router(router)
     yield

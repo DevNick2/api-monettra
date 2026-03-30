@@ -1,11 +1,12 @@
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, UploadFile, status
+from fastapi import APIRouter, Depends, Query, status
 from dependency_injector.wiring import Provide, inject
 
 from src.shared.services.di_services import ContainerService
 from src.shared.utils.auth import get_current_user
+from src.shared.utils.dependencies import get_current_account_id
 from src.modules.transactions.transactions_service import TransactionsService
 from src.modules.categories.categories_service import CategoriesService
 from src.schemas.categories import CategorySchema
@@ -28,10 +29,10 @@ router = APIRouter(prefix="/transactions", tags=["Transactions"])
 async def list_transactions(
     month: int | None = None,
     year: int | None = None,
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
 ):
-    return service.find_all(current_user["uid"], month=month, year=year)
+    return service.find_all(account_id, month=month, year=year)
 
 
 @router.post(
@@ -44,9 +45,10 @@ async def list_transactions(
 async def create_transaction(
     body: CreateTransactionDTO,
     current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
 ):
-    return service.create(current_user["uid"], body)
+    return service.create(current_user["uid"], account_id, body)
 
 
 @router.post(
@@ -59,9 +61,10 @@ async def create_transaction(
 async def create_batch_transactions(
     body: BatchCreateTransactionDTO,
     current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
 ):
-    return service.create_batch(current_user["uid"], body)
+    return service.create_batch(current_user["uid"], account_id, body)
 
 
 @router.patch(
@@ -72,10 +75,10 @@ async def create_batch_transactions(
 @inject
 async def pay_transaction(
     code: UUID,
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
 ):
-    return service.mark_as_paid(current_user["uid"], code)
+    return service.mark_as_paid(account_id, code)
 
 
 @router.put(
@@ -87,16 +90,16 @@ async def pay_transaction(
 async def update_transaction(
     code: UUID,
     body: UpdateTransactionDTO,
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: TransactionsService = Depends(Provide[ContainerService.transactions_service]),
     category_service: CategoriesService = Depends(Provide[ContainerService.categories_service])
 ):
     category: CategorySchema | None = None
 
     if body.category_code is not None:
-        category = category_service.show(body.category_code)
+        category = category_service.show(account_id, body.category_code)
 
-    return service.update(current_user["uid"], code, body, category)
+    return service.update(account_id, code, body, category)
 
 
 @router.delete(
@@ -108,21 +111,8 @@ async def update_transaction(
 async def delete_transaction(
     code: UUID,
     scope: Literal["single", "forward", "all"] = Query(default="single"),
-    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
     service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
 ):
-    service.remove(current_user["uid"], code, scope=scope)
+    service.remove(account_id, code, scope=scope)
 
-
-@router.post(
-    "/import/ofx",
-    status_code=status.HTTP_201_CREATED,
-    summary="Importa transações de um arquivo OFX"
-)
-@inject
-async def import_transactions(
-    file: UploadFile,
-    current_user: dict = Depends(get_current_user),
-    service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
-):
-    return await service.import_ofx(current_user["uid"], file)

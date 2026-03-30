@@ -8,18 +8,22 @@ from .base import BaseSchema
 from .transactions import TransactionType
 
 DEFAULT_CATEGORIES = [
-    {"title": "Moradia",      "color": "#8b6914", "icon_name": "Home", "type": TransactionType.EXPENSE},
+    {"title": "Necessidades Básicas",      "color": "#8b6914", "icon_name": "Home", "type": TransactionType.EXPENSE},
     {"title": "Transporte",   "color": "#5a6e8b", "icon_name": "Car", "type": TransactionType.EXPENSE},
     {"title": "Lazer",        "color": "#7a5a8b", "icon_name": "Gamepad2", "type": TransactionType.EXPENSE},
     {"title": "Educação",     "color": "#5a8b6e", "icon_name": "GraduationCap", "type": TransactionType.EXPENSE},
     {"title": "Investimentos","color": "#8b7a5a", "icon_name": "Briefcase", "type": TransactionType.EXPENSE},
     {"title": "Saúde",        "color": "#a63d2f", "icon_name": "Heart", "type": TransactionType.EXPENSE},
     {"title": "Salário",      "color": "#4a7a4a", "icon_name": "DollarSign", "type": TransactionType.INCOME},
+    {"title": "Dívidas",      "color": "#a63d2f", "icon_name": "BanknoteArrowDown", "type": TransactionType.EXPENSE},
+    {"title": "Financiamentos",      "color": "#a63d2f", "icon_name": "Handshake", "type": TransactionType.EXPENSE},
+    {"title": "Outras Despesas",      "color": "#a63d2f", "icon_name": "HandCoins", "type": TransactionType.EXPENSE},
 ]
 
 if TYPE_CHECKING:
     from .users import UserSchema
     from .transactions import TransactionSchema
+    from .accounts import AccountSchema
 
 
 class CategorySchema(BaseSchema):
@@ -33,9 +37,11 @@ class CategorySchema(BaseSchema):
         nullable=True
     )
 
-    # FK
+    # FKs
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), nullable=False)
 
     # Relationships
     user: Mapped["UserSchema"] = relationship(back_populates="categories")
     transactions: Mapped[List["TransactionSchema"]] = relationship(back_populates="category")
+    account: Mapped["AccountSchema"] = relationship(back_populates="categories")

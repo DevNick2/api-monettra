@@ -16,7 +16,7 @@ class PlanningService:
         self.transaction_repository = transaction_repository
         self.cache = cache
 
-    def horizon(self, user_id: int):
-        results = self.transaction_repository.horizon(user_id)
+    def horizon(self, account_id: int):
+        results = self.transaction_repository.horizon(account_id)
 
         return results

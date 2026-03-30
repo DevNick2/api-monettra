@@ -48,4 +48,4 @@ run:
 
 # Ativa o monitoramento do container em desenvolvimento
 watch:
-	docker compose logs -f api
+	docker compose logs -f

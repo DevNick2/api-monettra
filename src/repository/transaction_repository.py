@@ -9,11 +9,11 @@ from src.schemas.categories import CategorySchema
 
 class TransactionRepository:
     def __init__(self, dbSession: Session):
-        self.session = dbSession()
+        self.session = dbSession
 
-    def find_all_by_user(
+    def find_all_by_account(
         self,
-        user_id: int,
+        account_id: int,
         month: int | None = None,
         year: int | None = None
     ) -> list[TransactionSchema]:
@@ -22,7 +22,7 @@ class TransactionRepository:
         query = (
             select(TransactionSchema)
             .outerjoin(SubscriptionSchema, TransactionSchema.subscription_id == SubscriptionSchema.id)
-            .where(TransactionSchema.user_id == user_id)
+            .where(TransactionSchema.account_id == account_id)
             .where(TransactionSchema.deleted_at == None)  # noqa: E711
             .where(
                 (TransactionSchema.subscription_id == None) | 
@@ -36,11 +36,11 @@ class TransactionRepository:
         query = query.order_by(TransactionSchema.due_date.desc())
         return self.session.execute(query).scalars().all()
 
-    def find_by_code(self, code: UUID, user_id: int) -> TransactionSchema | None:
+    def find_by_code(self, code: UUID, account_id: int) -> TransactionSchema | None:
         return self.session.execute(
             select(TransactionSchema)
             .where(TransactionSchema.code == code)
-            .where(TransactionSchema.user_id == user_id)
+            .where(TransactionSchema.account_id == account_id)
             .where(TransactionSchema.deleted_at == None)  # noqa: E711
         ).scalars().first()
 
@@ -72,14 +72,14 @@ class TransactionRepository:
     def find_by_recurrence_forward(
         self,
         recurrence_id: UUID,
-        user_id: int,
+        account_id: int,
         from_date: date
     ) -> list[TransactionSchema]:
         """Retorna todas as parcelas de uma recorrência iguais ou posteriores à data informada."""
         return self.session.execute(
             select(TransactionSchema)
             .where(TransactionSchema.recurrence_id == recurrence_id)
-            .where(TransactionSchema.user_id == user_id)
+            .where(TransactionSchema.account_id == account_id)
             .where(TransactionSchema.deleted_at == None)  # noqa: E711
             .where(TransactionSchema.due_date >= from_date)
             .order_by(TransactionSchema.due_date)
@@ -88,13 +88,13 @@ class TransactionRepository:
     def find_all_by_recurrence(
         self,
         recurrence_id: UUID,
-        user_id: int
+        account_id: int
     ) -> list[TransactionSchema]:
         """Retorna TODAS as parcelas de uma recorrência (passadas e futuras)."""
         return self.session.execute(
             select(TransactionSchema)
             .where(TransactionSchema.recurrence_id == recurrence_id)
-            .where(TransactionSchema.user_id == user_id)
+            .where(TransactionSchema.account_id == account_id)
             .where(TransactionSchema.deleted_at == None)  # noqa: E711
             .order_by(TransactionSchema.due_date)
         ).scalars().all()
@@ -106,10 +106,10 @@ class TransactionRepository:
             t.deleted_at = now
         self.session.commit()
 
-    def horizon(self, user_id: int) -> list:
+    def horizon(self, account_id: int) -> list:
         query = (
             select(TransactionSchema)
-            .where(TransactionSchema.user_id == user_id)
+            .where(TransactionSchema.account_id == account_id)
             .where(TransactionSchema.deleted_at == None)  # noqa: E711
         )
 

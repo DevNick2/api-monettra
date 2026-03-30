@@ -14,6 +14,11 @@ class RecurrenceType(str, Enum):
     SEMIANNUAL = "semiannual"
 
 
+class PaymentMethod(str, Enum):
+    DEFAULT = "default"
+    CREDIT_CARD = "credit_card"
+
+
 def _parse_amount_str(v) -> int:
     """Converte string pt-BR ou número para centavos."""
     if isinstance(v, str):
@@ -56,6 +61,7 @@ class CreateSubscriptionDTO(BaseModel):
     is_active: bool = True
     description: str | None = None
     icon_name: str | None = None
+    payment_method: PaymentMethod = PaymentMethod.DEFAULT
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -77,6 +83,7 @@ class UpdateSubscriptionDTO(BaseModel):
     is_active: bool | None = None
     description: str | None = None
     icon_name: str | None = None
+    payment_method: PaymentMethod | None = None
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -101,6 +108,7 @@ class SubscriptionResponse(BaseModel):
     is_active: bool
     description: str | None
     icon_name: str | None
+    payment_method: PaymentMethod = PaymentMethod.DEFAULT
     created_at: datetime
 
     model_config = {"from_attributes": True}

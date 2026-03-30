@@ -9,8 +9,8 @@ class AnalyticsService:
     def __init__(self, repository: AnalyticsRepository):
         self.repository = repository
 
-    def get_expenses_by_category(self, user_id: int, start_date: date, end_date: date) -> list[CategoryAnalyticsResponse]:
-        results = self.repository.get_expenses_by_category(user_id, start_date, end_date)
+    def get_expenses_by_category(self, account_id: int, start_date: date, end_date: date) -> list[CategoryAnalyticsResponse]:
+        results = self.repository.get_expenses_by_category(account_id, start_date, end_date)
         return [
             CategoryAnalyticsResponse(
                 category_name=row.category_name,
@@ -19,28 +19,45 @@ class AnalyticsService:
             ) for row in results
         ]
 
-    def get_accumulated_expenses(self, user_id: int, start_date: date, end_date: date, group_by: str) -> list[AccumulatedAnalyticsResponse]:
-        if group_by not in ["day", "week"]:
-            raise HTTPException(status_code=422, detail="group_by deve ser 'day' ou 'week'")
-            
-        results = self.repository.get_accumulated_expenses(user_id, start_date, end_date, group_by)
-        
+    def get_accumulated_expenses(self, account_id: int, start_date: date, end_date: date, group_by: str) -> list[AccumulatedAnalyticsResponse]:
+        if group_by not in ["day", "week", "month"]:
+            raise HTTPException(status_code=422, detail="group_by deve ser 'day', 'week' ou 'month'")
+
+        results = self.repository.get_accumulated_expenses(account_id, start_date, end_date, group_by)
+
+        if group_by == "month":
+            MONTH_LABELS = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+            # Mapeia os meses retornados pelo banco (1-12) para seus totais
+            totals_by_month: dict[int, float] = {}
+            for row in results:
+                month_num = int(row.period) if row.period else 0
+                totals_by_month[month_num] = (row.total / 100.0) if row.total else 0.0
+
+            # Garante os 12 meses, preenchendo com 0.0 os que não têm dados
+            return [
+                AccumulatedAnalyticsResponse(
+                    label=MONTH_LABELS[m - 1],
+                    total=totals_by_month.get(m, 0.0)
+                )
+                for m in range(1, 13)
+            ]
+
         response = []
         accumulated = 0.0
         for row in results:
             period_val = int(row.period) if row.period else 0
             accumulated += (row.total / 100.0) if row.total else 0.0
-            
+
             label = f"Dia {period_val}" if group_by == "day" else f"Semana {period_val}"
             response.append(AccumulatedAnalyticsResponse(
                 label=label,
                 total=accumulated
             ))
-            
+
         return response
 
     def get_trend_by_category(
-        self, user_id: int, year: int, category_codes: list[str] | None = None
+        self, account_id: int, year: int, category_codes: list[str] | None = None
     ) -> list[TrendAnalyticsResponse]:
         from datetime import date
         from src.modules.analytics.ols_helper import OLSHelper
@@ -48,7 +65,7 @@ class AnalyticsService:
         # Resolve category_codes if they are given as strings, the repository compares UUIDs
         codes = [UUID(c) for c in category_codes] if category_codes else None
 
-        results = self.repository.get_trend_by_category(user_id, year, codes)
+        results = self.repository.get_trend_by_category(account_id, year, codes)
 
         today = date.today()
         if year < today.year:

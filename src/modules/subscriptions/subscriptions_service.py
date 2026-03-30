@@ -13,7 +13,10 @@ from uuid import UUID
 from fastapi import HTTPException, status
 
 from src.repository.subscription_repository import SubscriptionRepository
-from src.schemas.subscriptions import RecurrenceType as SchemaRecurrenceType
+from src.schemas.subscriptions import (
+    RecurrenceType as SchemaRecurrenceType,
+    SubscriptionPaymentMethod as SchemaPaymentMethod,
+)
 from src.shared.utils.logger import logger
 from .dtos import CreateSubscriptionDTO, UpdateSubscriptionDTO
 from src.shared.services.redis_service import RedisService
@@ -30,13 +33,13 @@ class SubscriptionsService:
         self.transaction_repository = transaction_repository
         self.cache = cache
 
-    def find_all(self, user_id: int) -> list:
-        return self.repository.find_all_by_user(user_id)
+    def find_all(self, account_id: int) -> list:
+        return self.repository.find_all_by_account(account_id)
 
-    def find_active(self, user_id: int) -> list:
-        return self.repository.find_active_by_user(user_id)
+    def find_active(self, account_id: int) -> list:
+        return self.repository.find_active_by_account(account_id)
 
-    def create(self, user_id: int, data: CreateSubscriptionDTO):
+    def create(self, user_id: int, account_id: int, data: CreateSubscriptionDTO):
         if data.amount <= 0:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -51,7 +54,9 @@ class SubscriptionsService:
                 "has_trial": data.has_trial,
                 "is_active": data.is_active,
                 "description": data.description,
-                "user_id": user_id,
+                "payment_method": SchemaPaymentMethod[data.payment_method.value.upper()],
+                "user_id": user_id,  # Legacy
+                "account_id": account_id,
             })
             
             # XXX TODO :: Refatorar, por que não usar o transactions_service.create ou bulk_create?
@@ -77,13 +82,15 @@ class SubscriptionsService:
                         "type_of_transaction": TransactionClassification.SUBSCRIPTION,
                         "is_paid": False,
                         "paid_at": None,
-                        "user_id": user_id,
+                        "user_id": user_id, # Legacy
+                        "created_by": user_id,
+                        "account_id": account_id,
                         "category_id": None,
                         "subscription_id": record.id,
                         "recurrence_id": recurrence_id,
                     })                
                 self.transaction_repository.bulk_create(records)
-                self.cache.delete_pattern(f"{RedisService.TRANSACTIONS_CACHE_PREFIX}:{user_id}:*")
+                self.cache.delete_pattern(f"transactions:aid:{account_id}:*")
 
             return record
         except Exception as e:
@@ -93,11 +100,11 @@ class SubscriptionsService:
                 detail="Erro interno ao criar assinatura",
             )
 
-    def toggle_active(self, user_id: int, subscription_code: UUID):
+    def toggle_active(self, account_id: int, subscription_code: UUID):
         """
         Regra Suprema: o toggle manual sempre sobrepõe qualquer inferência por data.
         """
-        subscription = self.repository.find_by_code(subscription_code, user_id)
+        subscription = self.repository.find_by_code(subscription_code, account_id)
         if not subscription:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -106,11 +113,11 @@ class SubscriptionsService:
 
         subscription.is_active = not subscription.is_active
 
-        self.cache.delete_pattern(f"{RedisService.TRANSACTIONS_CACHE_PREFIX}:{user_id}:*")
+        self.cache.delete_pattern(f"transactions:aid:{account_id}:*")
         return self.repository.update(subscription)
 
-    def update(self, user_id: int, subscription_code: UUID, data: UpdateSubscriptionDTO):
-        subscription = self.repository.find_by_code(subscription_code, user_id)
+    def update(self, account_id: int, subscription_code: UUID, data: UpdateSubscriptionDTO):
+        subscription = self.repository.find_by_code(subscription_code, account_id)
         if not subscription:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -125,7 +132,22 @@ class SubscriptionsService:
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="O valor da assinatura deve ser positivo",
                 )
-            subscription.amount = data.amount
+            # amount é derivado das transações filha: atualiza todas as futuras não pagas
+            if self.transaction_repository:
+                from datetime import date as _date
+                from src.schemas.transactions import TransactionSchema
+                from sqlalchemy import select
+                today = _date.today()
+                pending = self.transaction_repository.session.execute(
+                    select(TransactionSchema).where(
+                        TransactionSchema.subscription_id == subscription.id,
+                        TransactionSchema.is_paid == False,  # noqa: E712
+                        TransactionSchema.due_date >= today,
+                        TransactionSchema.deleted_at == None,  # noqa: E711
+                    )
+                ).scalars().all()
+                for tx in pending:
+                    tx.amount = data.amount
         if data.recurrence is not None:
             subscription.recurrence = SchemaRecurrenceType[data.recurrence.value.upper()]
         if data.billing_date is not None:
@@ -136,13 +158,15 @@ class SubscriptionsService:
             subscription.is_active = data.is_active
         if data.description is not None:
             subscription.description = data.description
+        if data.payment_method is not None:
+            subscription.payment_method = SchemaPaymentMethod[data.payment_method.value.upper()]
 
-        self.cache.delete_pattern(f"{RedisService.TRANSACTIONS_CACHE_PREFIX}:{user_id}:*")
+        self.cache.delete_pattern(f"transactions:aid:{account_id}:*")
 
         return self.repository.update(subscription)
 
-    def remove(self, user_id: int, subscription_code: UUID):
-        subscription = self.repository.find_by_code(subscription_code, user_id)
+    def remove(self, account_id: int, subscription_code: UUID):
+        subscription = self.repository.find_by_code(subscription_code, account_id)
         if not subscription:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -165,4 +189,4 @@ class SubscriptionsService:
             if transactions_to_delete:
                 self.transaction_repository.bulk_soft_delete(transactions_to_delete)
             
-            self.cache.delete_pattern(f"{RedisService.TRANSACTIONS_CACHE_PREFIX}:{user_id}:*")
+            self.cache.delete_pattern(f"transactions:aid:{account_id}:*")
