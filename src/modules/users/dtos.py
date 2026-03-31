@@ -6,6 +6,7 @@ from datetime import datetime
 class UpdateUserDTO(BaseModel):
     name: Optional[str] = None
     email: Optional[str] = None
+    password: Optional[str] = None
 
 
 class UserResponse(BaseModel):

@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from src.repository.user_repository import UserRepository
 from src.modules.users.dtos import UpdateUserDTO, UserResponse
 from src.shared.utils.logger import logger
-
+from src.shared.utils.auth import hash_password
 
 class UsersService:
     def __init__(self, repository: UserRepository):
@@ -33,7 +33,12 @@ class UsersService:
             )
 
         try:
-            updated = self.repository.update(user, payload.model_dump(exclude_none=True))
+            payload = payload.model_dump(exclude_none=True)
+
+            if payload.get("password") is not None:
+                payload["password"] = hash_password(payload["password"])
+
+            updated = self.repository.update(user, payload)
             return UserResponse.model_validate(updated)
         except Exception as e:
             logger.error(f"Erro ao atualizar usuário {user_code}: {e}")
