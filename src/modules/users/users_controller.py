@@ -1,20 +1,43 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from dependency_injector.wiring import Provide, inject
 
 from src.shared.services.di_services import ContainerService
-from src.repository.user_repository import UserRepository
-from src.shared.utils.logger import logger
+from src.shared.utils.auth import get_current_user, require_admin
+from src.modules.users.users_service import UsersService
+from src.modules.users.dtos import UpdateUserDTO, UserResponse
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-@router.get("/", summary="Lista todos os usuários")
+@router.get("/", response_model=list[UserResponse], summary="Lista todos os usuários (admin)")
 @inject
 async def list_users(
-    user_repository: UserRepository = Depends(Provide[ContainerService.userRepository])
+    current_user: dict = Depends(require_admin),
+    service: UsersService = Depends(Provide[ContainerService.users_service]),
 ):
-    try:
-        return user_repository.find_all()
-    except Exception as e:
-        logger.error(f"Erro ao buscar usuários: {e}")
-        raise HTTPException(status_code=500, detail="Erro interno ao buscar usuários")
+    return service.find_all()
+
+
+@router.patch("/{user_code}", response_model=UserResponse, summary="Atualiza dados de um usuário")
+@inject
+async def update_user(
+    user_code: str,
+    payload: UpdateUserDTO,
+    current_user: dict = Depends(get_current_user),
+    service: UsersService = Depends(Provide[ContainerService.users_service]),
+):
+    return service.update(user_code, payload, current_user)
+
+
+@router.patch(
+    "/{user_code}/deactivate",
+    response_model=UserResponse,
+    summary="Desativa um usuário (admin)",
+)
+@inject
+async def deactivate_user(
+    user_code: str,
+    current_user: dict = Depends(require_admin),
+    service: UsersService = Depends(Provide[ContainerService.users_service]),
+):
+    return service.deactivate(user_code)

@@ -20,6 +20,7 @@ from src.modules.accounts.accounts_service import AccountsService
 from src.shared.services.ia_service import IaService
 from src.modules.ia_engine.ia_engine_service import IaEngineService
 from src.modules.credit_cards.credit_cards_service import CreditCardsService
+from src.modules.users.users_service import UsersService
 
 from .postgres_services import PostgresServices
 
@@ -91,6 +92,7 @@ class ContainerService(containers.DeclarativeContainer):
     # ---------------------------------------------------------------------------
     # Services
     # ---------------------------------------------------------------------------
+    users_service = providers.Factory(UsersService, repository=userRepository)
     auth_service = providers.Factory(AuthService, repository=userRepository)
     transactions_service = providers.Factory(
         TransactionsService,

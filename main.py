@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
         "src.shared.utils.dependencies",
         "src.modules.health.health_controller",
         "src.modules.users.users_controller",
+        "src.modules.users.users_service",
         "src.modules.auth.auth_controller",
         "src.modules.transactions.transactions_controller",
         "src.modules.categories.categories_controller",
