@@ -48,7 +48,9 @@ app: FastAPI = FastAPI(
     title="Monettra API",
     description="API do projeto Monettra — gestão financeira pessoal com assistente de IA.",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    # Evita 307 /transactions → /transactions/ em CORS cross-origin (browser + preflight).
+    redirect_slashes=False,
 )
 
 # ---------------------------------------------------------------------------
