@@ -107,7 +107,7 @@ async def create_charge(
 ):
     category_id: int | None = None
     if payload.category_code:
-        cat = categories_service.show(payload.category_code, current_user["uid"])
+        cat = categories_service.show(account_id, payload.category_code)
         category_id = cat.id if cat else None
 
     return service.create_charge(current_user["uid"], account_id, payload, category_id)

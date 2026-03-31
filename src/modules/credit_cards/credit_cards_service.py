@@ -146,10 +146,14 @@ class CreditCardsService:
         Retorna as faturas impactadas.
         """
         card = self.repository.find_by_code(payload.credit_card_code, account_id)
+
         if not card:
             raise HTTPException(status_code=404, detail="Cartão não encontrado")
 
         total_cents = payload.amount
+        # XXX FIXME :: esse n aqui é tenso
+        # Essa variavel poderia ser chamada de installment_count ou
+        # installment_quantity ou installment_number
         n = payload.installments
 
         # Rateio sem perda de centavos: primeira parcela absorve o restante
