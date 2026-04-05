@@ -144,6 +144,22 @@ class UpdateTransactionDTO(BaseModel):
         return v
 
 
+class TransactionSummaryResponse(BaseModel):
+    """Agregação de receitas/despesas e saldos líquidos de um mês."""
+
+    # Totais gerais (todas as transações do período)
+    total_income: int
+    total_expense: int
+    net_balance: int
+
+    # Totais apenas de transações pagas (is_paid = True)
+    paid_income: int
+    paid_expense: int
+    paid_net_balance: int
+
+    model_config = {"from_attributes": True}
+
+
 class TransactionResponse(BaseModel):
     code: UUID4
     title: str

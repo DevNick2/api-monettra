@@ -25,6 +25,7 @@ from .dtos import (
     BatchCreateTransactionDTO,
     UpdateTransactionDTO,
     TransactionResponse,
+    TransactionSummaryResponse,
 )
 from src.schemas.transactions import TransactionType
 from src.schemas.categories import CategorySchema
@@ -36,8 +37,18 @@ from sqlalchemy import select
 
 CACHE_TTL = 10  # segundos
 
+
+def _resolve_paid_status_for_manual_date(transaction_date: date, today_local: date) -> bool:
+    """Regra de negócio: lançamentos manuais com data ≤ hoje são marcados como pagos."""
+    return transaction_date <= today_local
+
+
 def _cache_key(account_id: int, month: int | None, year: int | None) -> str:
     return f"transactions:aid:{account_id}:m:{month}:y:{year}"
+
+
+def _summary_cache_key(account_id: int, month: int | None, year: int | None) -> str:
+    return f"transactions:summary:aid:{account_id}:m:{month}:y:{year}"
 
 
 def _invalidate_account_cache(cache: RedisService, account_id: int) -> None:
@@ -121,6 +132,29 @@ class TransactionsService:
 
         return results
 
+    def get_summary(
+        self,
+        account_id: int,
+        month: int | None = None,
+        year: int | None = None,
+    ) -> TransactionSummaryResponse:
+        key = _summary_cache_key(account_id, month, year)
+        cached = self.cache.get(key)
+
+        if cached:
+            logger.info(f"Cache HIT (summary) → {key}")
+            return TransactionSummaryResponse(**json.loads(cached))
+
+        logger.info(f"Cache MISS (summary) → {key}")
+        data = self.repository.get_summary_by_account(account_id, month=month, year=year)
+
+        try:
+            self.cache.set(key, json.dumps(data), ttl=CACHE_TTL)
+        except Exception as e:
+            logger.warning(f"Falha ao serializar summary para cache: {e}")
+
+        return TransactionSummaryResponse(**data)
+
     def create(self, user_id: int, account_id: int, data: CreateTransactionDTO):
         if data.amount <= 0:
             raise HTTPException(
@@ -131,6 +165,8 @@ class TransactionsService:
         category_id = self._resolve_category(account_id, data.category_code)
         owner_id = self._resolve_owner(account_id, data.owner_code, default_user_id=user_id)
 
+        is_paid = _resolve_paid_status_for_manual_date(data.due_date, date.today())
+
         try:
             record = self.repository.create({
                 "title": data.title,
@@ -138,8 +174,8 @@ class TransactionsService:
                 "type": TransactionType[data.type.value.upper()],
                 "due_date": data.due_date,
                 "description": data.description,
-                "is_paid": data.is_paid,
-                "paid_at": datetime.now(timezone.utc) if data.is_paid else None,
+                "is_paid": is_paid,
+                "paid_at": datetime.now(timezone.utc) if is_paid else None,
                 "user_id": user_id,
                 "created_by": user_id,
                 "account_id": account_id,
@@ -179,18 +215,21 @@ class TransactionsService:
 
         start = data.start_date
         records = []
+        today_local = date.today()
         for month in range(start.month, 13):
             last_day = calendar.monthrange(start.year, month)[1]
             day = min(start.day, last_day)
+            due = date(start.year, month, day)
+            is_paid = _resolve_paid_status_for_manual_date(due, today_local)
             records.append({
                 "title": data.title,
                 "amount": data.amount,
                 "type": TransactionType[data.type.value.upper()],
-                "due_date": date(start.year, month, day),
+                "due_date": due,
                 "description": data.description,
-                "is_paid": data.is_paid,
+                "is_paid": is_paid,
                 "paid_at": (
-                    datetime.now(timezone.utc) if data.is_paid else None
+                    datetime.now(timezone.utc) if is_paid else None
                 ),
                 "user_id": user_id,
                 "created_by": user_id,
@@ -278,14 +317,18 @@ class TransactionsService:
                 t.type = TransactionType[data.type.value.upper()]
             if data.description is not None:
                 t.description = data.description
-            if data.is_paid is not None:
+            # A data só muda para "single" para preservar datas cronológicas
+            if data.due_date is not None and scope == "single":
+                t.due_date = data.due_date
+                # Recalcula is_paid com base na nova data (regra de lançamento manual)
+                auto_paid = _resolve_paid_status_for_manual_date(data.due_date, date.today())
+                t.is_paid = auto_paid
+                t.paid_at = datetime.now(timezone.utc) if auto_paid else None
+            elif data.is_paid is not None:
                 t.is_paid = data.is_paid
                 t.paid_at = (
                     datetime.now(timezone.utc) if data.is_paid else None
                 )
-            # A data só muda para "single" para preservar datas cronológicas
-            if data.due_date is not None and scope == "single":
-                t.due_date = data.due_date
             # Categoria é propagada em todos os escopos
             if category is not None:
                 t.category_id = category.id

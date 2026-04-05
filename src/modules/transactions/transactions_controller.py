@@ -15,9 +15,25 @@ from .dtos import (
     BatchCreateTransactionDTO,
     UpdateTransactionDTO,
     TransactionResponse,
+    TransactionSummaryResponse,
 )
 
 router = APIRouter(prefix="/transactions", tags=["Transactions"])
+
+
+@router.get(
+    "/summary",
+    response_model=TransactionSummaryResponse,
+    summary="Retorna agregação de receitas, despesas e saldos líquidos do mês"
+)
+@inject
+async def get_transactions_summary(
+    month: int | None = None,
+    year: int | None = None,
+    account_id: int = Depends(get_current_account_id),
+    service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
+):
+    return service.get_summary(account_id, month=month, year=year)
 
 
 @router.get(
