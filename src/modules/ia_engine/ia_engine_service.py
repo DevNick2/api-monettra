@@ -17,10 +17,12 @@ from fastapi import HTTPException, status
 
 from src.modules.analytics.analytics_service import AnalyticsService
 from src.modules.categories.categories_service import CategoriesService
+from src.modules.ia_engine.dtos import OfxImportResponse
 from src.modules.subscriptions.subscriptions_service import SubscriptionsService
 from src.modules.transactions.transactions_service import TransactionsService
 from src.repository.ofx_import_repository import OfxImportRepository
 from src.shared.services.ia_service import IaService
+from src.shared.services.ia_tasks import process_ofx_task
 from src.shared.services.ia_tools import IaToolRegistry
 from src.shared.services.redis_service import RedisService
 from src.shared.utils.logger import logger
@@ -347,8 +349,6 @@ class IaEngineService:
         Retorna 409 se já houver uma importação em andamento para a conta.
         Retorna o registro de importação (com code UUID para polling).
         """
-        from src.shared.services.ia_tasks import process_ofx_task
-
         active = self.ofx_import_repository.find_active_by_account(account_id)
         if active:
             raise HTTPException(
@@ -474,5 +474,4 @@ class IaEngineService:
 
     @staticmethod
     def _serialize_import_record(record) -> dict:
-        from src.modules.ia_engine.dtos import OfxImportResponse
         return OfxImportResponse.model_validate(record).model_dump(mode="json")

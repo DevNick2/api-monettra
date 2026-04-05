@@ -17,7 +17,7 @@ from uuid import UUID as PyUUID
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.shared.services.celery_app import celery_app
+from src.shared.services.celery_service import celery_service
 from src.shared.services.ia_service import IaService
 from src.shared.services.redis_service import RedisService
 from src.shared.utils.environment import environment
@@ -221,7 +221,7 @@ def _get_hint_type(raw_description: str) -> str | None:
 # ---------------------------------------------------------------------------
 # Celery Task — Processamento OFX em Background
 # ---------------------------------------------------------------------------
-@celery_app.task(
+@celery_service.task(
     bind=True,
     max_retries=2,
     default_retry_delay=30,

@@ -7,16 +7,21 @@ Regras de estado:
   - Se is_active=False, assinatura não entra nos cálculos de analytics.
 """
 
+import uuid
+import calendar
+
 from datetime import date
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 
 from src.repository.subscription_repository import SubscriptionRepository
 from src.schemas.subscriptions import (
     RecurrenceType as SchemaRecurrenceType,
     SubscriptionPaymentMethod as SchemaPaymentMethod,
 )
+from src.schemas.transactions import TransactionType, TransactionClassification, TransactionSchema
 from src.shared.utils.logger import logger
 from .dtos import CreateSubscriptionDTO, UpdateSubscriptionDTO
 from src.shared.services.redis_service import RedisService
@@ -61,10 +66,6 @@ class SubscriptionsService:
             
             # XXX TODO :: Refatorar, por que não usar o transactions_service.create ou bulk_create?
             if self.transaction_repository:
-                import uuid
-                import calendar
-                from src.schemas.transactions import TransactionType, TransactionClassification
-
                 recurrence_id = uuid.uuid4()
                 start = data.billing_date or date.today()
                 
@@ -134,10 +135,7 @@ class SubscriptionsService:
                 )
             # amount é derivado das transações filha: atualiza todas as futuras não pagas
             if self.transaction_repository:
-                from datetime import date as _date
-                from src.schemas.transactions import TransactionSchema
-                from sqlalchemy import select
-                today = _date.today()
+                today = date.today()
                 pending = self.transaction_repository.session.execute(
                     select(TransactionSchema).where(
                         TransactionSchema.subscription_id == subscription.id,
@@ -176,9 +174,6 @@ class SubscriptionsService:
         self.repository.soft_delete(subscription)
 
         if self.transaction_repository:
-            from src.schemas.transactions import TransactionSchema
-            from sqlalchemy import select
-            
             transactions_to_delete = self.transaction_repository.session.execute(
                 select(TransactionSchema).where(
                     TransactionSchema.subscription_id == subscription.id,

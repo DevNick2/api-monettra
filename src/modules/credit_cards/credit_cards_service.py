@@ -9,7 +9,7 @@ Motor de Fatura (Invoice Engine):
 """
 
 import calendar
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -118,7 +118,6 @@ class CreditCardsService:
             for transaction in invoice.transactions:
                 if not transaction.is_paid:
                     transaction.is_paid = True
-                    from datetime import datetime
                     transaction.paid_at = datetime.utcnow()
 
             self.repository.mark_invoice_paid(invoice)

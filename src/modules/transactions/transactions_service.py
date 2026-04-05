@@ -29,7 +29,9 @@ from .dtos import (
 from src.schemas.transactions import TransactionType
 from src.schemas.categories import CategorySchema
 from src.schemas.users import UserSchema
+from src.schemas.accounts import AccountMemberSchema
 from src.shared.services.ia_service import IaService
+from sqlalchemy import select
 
 
 CACHE_TTL = 10  # segundos
@@ -339,7 +341,6 @@ class TransactionsService:
         """Resolve o category_code para o ID interno, ou None."""
         if not category_code:
             return None
-        from sqlalchemy import select
         result = self.repository.session.execute(
             select(CategorySchema)
             .where(CategorySchema.code == category_code)
@@ -366,9 +367,6 @@ class TransactionsService:
         """
         if not owner_code:
             return default_user_id
-
-        from sqlalchemy import select
-        from src.schemas.accounts import AccountMemberSchema
 
         result = self.repository.session.execute(
             select(UserSchema)

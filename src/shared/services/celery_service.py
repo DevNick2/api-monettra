@@ -1,25 +1,26 @@
 """
-Celery App — Configuração do worker de tarefas assíncronas do Monettra.
+Celery Service — Configuração do worker de tarefas assíncronas do Monettra.
 
 Broker  : Redis (compartilhado com o cache da aplicação)
 Backend : Redis (armazena resultados das tasks)
 """
 
 from celery import Celery
+
 from src.shared.utils.environment import environment
 
 REDIS_HOST = environment.get("REDIS_HOST", "redis")
 REDIS_PORT = environment.get("REDIS_PORT", "6379")
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}/1"
 
-celery_app = Celery(
+celery_service = Celery(
     "monettra",
     broker=REDIS_URL,
     backend=REDIS_URL,
     include=["src.shared.services.ia_tasks"],
 )
 
-celery_app.conf.update(
+celery_service.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",

@@ -3,6 +3,7 @@ from src.repository.analytics_repository import AnalyticsRepository
 from src.shared.utils.logger import logger
 from datetime import datetime, date
 from uuid import UUID
+from src.modules.analytics.ols_helper import OLSHelper
 from .dtos import CategoryAnalyticsResponse, AccumulatedAnalyticsResponse, TrendAnalyticsResponse
 
 class AnalyticsService:
@@ -59,9 +60,6 @@ class AnalyticsService:
     def get_trend_by_category(
         self, account_id: int, year: int, category_codes: list[str] | None = None
     ) -> list[TrendAnalyticsResponse]:
-        from datetime import date
-        from src.modules.analytics.ols_helper import OLSHelper
-
         # Resolve category_codes if they are given as strings, the repository compares UUIDs
         codes = [UUID(c) for c in category_codes] if category_codes else None
 

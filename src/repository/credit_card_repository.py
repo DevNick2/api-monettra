@@ -1,8 +1,8 @@
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-
 from src.schemas.credit_cards import CreditCardSchema, InvoiceSchema
 
 
@@ -51,8 +51,7 @@ class CreditCardRepository:
         return card
 
     def soft_delete(self, card: CreditCardSchema) -> None:
-        from datetime import datetime
-        card.deleted_at = datetime.utcnow()
+        card.deleted_at = datetime.now(timezone.utc)
         self.session.commit()
 
     # ─── Invoices ──────────────────────────────────────────────────────────────

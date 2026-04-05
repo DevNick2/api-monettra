@@ -6,6 +6,8 @@ from uuid import UUID
 from typing import TYPE_CHECKING
 
 import httpx
+import secrets
+
 from fastapi import HTTPException, status
 
 from src.repository.user_repository import UserRepository
@@ -134,7 +136,6 @@ class AuthService:
         if not user:
             is_new_user = True
             # Senha aleatória — usuário OAuth não usa senha direta
-            import secrets
             placeholder_password = hash_password(secrets.token_hex(32))
             user = self.repository.create({
                 "name": name,
