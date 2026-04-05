@@ -53,6 +53,7 @@ def _summary_cache_key(account_id: int, month: int | None, year: int | None) -> 
 
 def _invalidate_account_cache(cache: RedisService, account_id: int) -> None:
     cache.delete_pattern(f"transactions:aid:{account_id}:*")
+    cache.delete_pattern(f"transactions:summary:aid:{account_id}:*")
 
 
 class TransactionsService:
