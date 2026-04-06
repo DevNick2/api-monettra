@@ -3,7 +3,8 @@ ia_engine/dtos.py — DTOs do módulo de IA Engine.
 """
 
 from datetime import datetime
-from pydantic import BaseModel, UUID4
+
+from pydantic import UUID4, BaseModel
 
 
 class ChatMessageDTO(BaseModel):

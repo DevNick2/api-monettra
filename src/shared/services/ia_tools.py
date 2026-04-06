@@ -268,12 +268,6 @@ class IaToolRegistry:
                 "count": len(serialized),
                 "transactions": limited,
             },
-            "ui_block": {
-                "type": "transactions-list",
-                "title": "Transações encontradas",
-                "items": limited,
-                "count": len(serialized),
-            },
         }
 
     def _execute_get_financial_summary(

@@ -11,31 +11,30 @@ Endpoints:
 """
 
 import json
-
 from uuid import UUID
 
+from dependency_injector.wiring import Provide, inject
 from fastapi import (
     APIRouter,
     Depends,
     File,
     Form,
-    UploadFile,
     HTTPException,
+    UploadFile,
     status,
 )
 from fastapi.responses import StreamingResponse
-from dependency_injector.wiring import Provide, inject
 
-from src.shared.services.di_services import ContainerService
-from src.shared.utils.auth import get_current_user
-from src.shared.utils.dependencies import get_current_account_id
 from src.modules.analytics.analytics_service import AnalyticsService
 from src.modules.categories.categories_service import CategoriesService
 from src.modules.ia_engine.ia_engine_service import IaEngineService
 from src.modules.subscriptions.subscriptions_service import SubscriptionsService
 from src.modules.transactions.transactions_service import TransactionsService
-from .dtos import OfxImportResponse
+from src.shared.services.di_services import ContainerService
+from src.shared.utils.auth import get_current_user
+from src.shared.utils.dependencies import get_current_account_id
 
+from .dtos import OfxImportResponse
 
 router = APIRouter(prefix="/ia", tags=["IA Engine"])
 

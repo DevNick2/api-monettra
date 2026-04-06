@@ -22,6 +22,7 @@ class TransactionType(str, Enum):
 class TransactionClassification(str, Enum):
     DEFAULT = "default"
     SUBSCRIPTION = "subscription"
+    CREDIT_CARD = "credit_card"
 
 class CreateTransactionDTO(BaseModel):
     title: str

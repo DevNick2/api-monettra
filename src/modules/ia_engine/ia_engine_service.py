@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 
@@ -26,7 +27,6 @@ from src.shared.services.ia_tasks import process_ofx_task
 from src.shared.services.ia_tools import IaToolRegistry
 from src.shared.services.redis_service import RedisService
 from src.shared.utils.logger import logger
-
 
 # ---------------------------------------------------------------------------
 # System Prompts com Guardrails
@@ -45,6 +45,18 @@ arquivos OFX importados.
 financeira pessoal.
 5. **Operações assistidas**: quando necessário, você pode consultar ferramentas do sistema \
 e criar transações, categorias e assinaturas com base nos dados fornecidos pelo usuário.
+
+## Dados e conta (OBRIGATÓRIO):
+- Você só tem acesso a informações da **conta ativa desta sessão**. \
+Nunca assuma dados de outras contas e nunca misture contexto entre usuários distintos.
+- Para afirmar **qualquer valor monetário, saldo, contagem ou lista de lançamentos**, \
+você DEVE usar a ferramenta adequada (`get_user_transactions`, `get_financial_summary`, etc.) \
+**OU** basear-se exclusivamente no bloco de contexto numérico injetado pelo sistema, \
+e somente quando o período e o tipo de dado corresponderem exatamente.
+- **É terminantemente proibido inventar** valores em reais, quantidades ou nomes de \
+lançamentos que não tenham sido fornecidos por uma ferramenta ou pelo bloco de contexto.
+- Se não tiver os dados necessários para responder com precisão, chame a ferramenta \
+adequada ou peça esclarecimentos ao usuário antes de responder.
 
 ## Guardrails (OBRIGATÓRIO):
 - Você **NÃO PODE** executar comandos de sistema, acessar IoT, ou tratar de temas \
@@ -97,8 +109,27 @@ class IaEngineService:
 
         Os services de domínio são recebidos por parâmetro (injetados pela controller)
         para evitar dependência circular entre services de módulos distintos.
+
+        Isolamento de conta (P0):
+          - account_id é sempre derivado do JWT via get_current_account_id no controller.
+          - O histórico Redis usa a chave chat:session:{user_id}:{account_id}, garantindo
+            que cada par usuário+conta tenha seu próprio histórico sem compartilhamento.
+          - O resumo de contexto é obtido exclusivamente para o account_id desta requisição.
+
+        Injeção de contexto (Opção A):
+          - O bloco de resumo numérico é concatenado ao system prompt apenas no array
+            enviado ao provedor neste turno; o Redis persiste somente as mensagens
+            user/assistant/tool, sem duplicar o contexto dinâmico a cada salvamento.
         """
         session = self._load_session(user_id, account_id)
+
+        # Enriquecer system prompt com resumo numérico da conta (somente para este turno).
+        # Falhas silenciosas: log de warning, chat prossegue sem o bloco de contexto.
+        context_block = self._build_account_context(account_id, transactions_service)
+        if context_block:
+            enhanced_system = CHAT_SYSTEM_PROMPT + "\n\n" + context_block
+            session[0] = {"role": "system", "content": enhanced_system}
+
         registry = IaToolRegistry(
             transactions_service=transactions_service,
             categories_service=categories_service,
@@ -398,6 +429,52 @@ class IaEngineService:
     @staticmethod
     def _session_key(user_id: int, account_id: int) -> str:
         return f"{CHAT_SESSION_KEY_PREFIX}{user_id}:{account_id}"
+
+    @staticmethod
+    def _build_account_context(
+        account_id: int,
+        transactions_service: TransactionsService,
+    ) -> str:
+        """
+        Monta bloco de contexto numérico da conta para o prompt do turno atual.
+
+        Obtém o resumo do mês/ano corrente via TransactionsService.get_summary, que
+        reutiliza o cache Redis existente (sem custo adicional de banco na maioria dos
+        casos). O account_id é exclusivamente o da sessão ativa — nunca aceitar outro.
+
+        Retorna string vazia em caso de falha, sem interromper o stream.
+        """
+        try:
+            now = datetime.now(timezone.utc)
+            summary = transactions_service.get_summary(
+                account_id=account_id,
+                month=now.month,
+                year=now.year,
+            )
+
+            def fmt(cents: int) -> str:
+                sign = "-" if cents < 0 else ""
+                abs_cents = abs(cents)
+                reais = abs_cents // 100
+                centavos = abs_cents % 100
+                return f"{sign}R$ {reais:,}.{centavos:02d}".replace(",", ".")
+
+            return (
+                f"### Contexto numérico da conta ({now.month:02d}/{now.year})\n"
+                f"- Receitas totais: {fmt(summary.total_income)}\n"
+                f"- Despesas totais: {fmt(summary.total_expense)}\n"
+                f"- Saldo líquido geral: {fmt(summary.net_balance)}\n"
+                f"- Receitas realizadas (pagas): {fmt(summary.paid_income)}\n"
+                f"- Despesas realizadas (pagas): {fmt(summary.paid_expense)}\n"
+                f"- Saldo realizado (pago): {fmt(summary.paid_net_balance)}\n"
+                f"_Fonte: dados reais da conta ativa. "
+                f"Para detalhes ou outros períodos, use as ferramentas disponíveis._"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"[ia_engine] Falha ao montar contexto numérico para account_id={account_id}: {exc}"
+            )
+            return ""
 
     def _load_session(self, user_id: int, account_id: int) -> list[dict]:
         """Carrega sessão de chat do Redis. Cria nova sessão se não existir."""
