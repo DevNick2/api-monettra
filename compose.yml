@@ -59,7 +59,7 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     command: >
-      uv run celery -A src.shared.services.celery_app.celery_app worker
+      uv run celery -A src.shared.services.celery_service.celery_service worker
       --loglevel=info
       --concurrency=2
       -Q celery

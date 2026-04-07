@@ -22,6 +22,7 @@ from src.modules.transactions.dtos import (
     UpdateTransactionDTO,
     TransactionSummaryResponse,
 )
+from src.shared.services.ia_tools import normalize_llm_transaction_amount
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -51,6 +52,31 @@ def test_resolve_paid_far_past_is_paid():
     today = date.today()
     past = date(2020, 1, 1)
     assert _resolve_paid_status_for_manual_date(past, today) is True
+
+
+def test_normalize_llm_transaction_amount_centavos_tipo_receipt():
+    """Inteiro 16603 (centavos) → float reais para CreateTransactionDTO."""
+    assert normalize_llm_transaction_amount(16603) == 166.03
+
+
+def test_normalize_llm_transaction_amount_reais_inteiros_pequenos():
+    """166 reais inteiros permanece int (DTO faz ×100)."""
+    assert normalize_llm_transaction_amount(166) == 166
+
+
+def test_normalize_llm_transaction_amount_string_inalterado():
+    assert normalize_llm_transaction_amount("166,03") == "166,03"
+
+
+def test_create_transaction_dto_com_amount_normalizado_receipt():
+    """Fluxo LLM: 16603 centavos → normaliza → 16603 centavos no modelo."""
+    payload = CreateTransactionDTO(
+        title="Nota",
+        amount=normalize_llm_transaction_amount(16603),
+        type="expense",
+        due_date=date(2026, 3, 21),
+    )
+    assert payload.amount == 16603
 
 
 def test_resolve_paid_far_future_is_pending():

@@ -11,6 +11,7 @@ Responsabilidades:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from datetime import datetime, timezone
 
@@ -70,6 +71,9 @@ transações e classificações."
 Use apenas códigos UUID quando precisar referenciar entidades.
 - Quando existir uma tool apropriada, prefira usá-la em vez de supor dados.
 - Se faltarem parâmetros para criar algo, peça esclarecimentos antes de executar.
+- **create_transaction — parâmetro `amount`:** use sempre string no formato brasileiro \
+(ex.: \"166,03\") ou número em **reais** com decimais (ex.: 166.03). Não envie o valor \
+em centavos como inteiro isolado (ex.: 16603), pois o sistema pode confundir com reais inteiros.
 """
 
 # ---------------------------------------------------------------------------
@@ -77,6 +81,97 @@ Use apenas códigos UUID quando precisar referenciar entidades.
 # ---------------------------------------------------------------------------
 CHAT_SESSION_KEY_PREFIX = "chat:session:"
 CHAT_SESSION_TTL = 7 * 24 * 60 * 60  # 7 dias em segundos
+
+# ---------------------------------------------------------------------------
+# Constantes de processamento de imagem
+# ---------------------------------------------------------------------------
+IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
+
+RECEIPT_EXTRACTION_PROMPT = """Você é um assistente de extração de dados de notas fiscais.
+Analise a imagem da nota fiscal e retorne EXCLUSIVAMENTE um JSON válido com o seguinte schema:
+
+{
+  "confidence": "high" | "low" | "none",
+  "establishment_name": string | null,
+  "date": "YYYY-MM-DD" | null,
+  "total": integer | null,
+  "discount_total": integer | null,
+  "items": [{"name": string, "unit_price": integer, "quantity": number}] | null
+}
+
+Regras:
+- "total" = valor líquido final em centavos (após qualquer desconto).
+- "confidence": "high" se o total estiver nítido; "low" se duvidoso; "none" se ilegível.
+- Não invente valores. Se não conseguir extrair um campo, use null.
+- Responda SOMENTE o JSON, sem texto adicional, sem markdown.
+"""
+
+
+def _build_receipt_synthetic_message(extracted: dict, filename: str, confidence: str) -> str:
+    """
+    Monta a mensagem textual (sem bytes) enviada ao chat_stream com os dados
+    extraídos da nota fiscal, para que o modelo use create_transaction normalmente.
+    """
+    def fmt(cents: int | None) -> str:
+        if cents is None:
+            return "?"
+        sign = "-" if cents < 0 else ""
+        abs_c = abs(cents)
+        return f"{sign}R$ {abs_c // 100:,}.{abs_c % 100:02d}".replace(",", ".")
+
+    def amount_tool_hint(cents: int | None) -> str:
+        """Instrução explícita para create_transaction (evita int centavos × reais inteiros)."""
+        if cents is None:
+            return (
+                "\n\nIMPORTANTE (create_transaction): use `amount` como string em pt-BR "
+                "ou número float em reais — não como inteiro em centavos."
+            )
+        c = abs(cents)
+        br = f"{c // 100},{c % 100:02d}"
+        reais_f = c / 100.0
+        return (
+            f"\n\nIMPORTANTE (create_transaction): use `amount` como string \"{br}\" "
+            f"ou número {reais_f:.2f} em reais — **não** o valor em centavos como inteiro "
+            f"({cents})."
+        )
+
+    name = extracted.get("establishment_name") or "não identificado"
+    date_str = extracted.get("date") or "hoje"
+    total = extracted.get("total")
+    discount = extracted.get("discount_total")
+    items: list[dict] = extracted.get("items") or []
+
+    if confidence == "low":
+        return (
+            f"[Conciliação de nota fiscal — dados parciais]\n"
+            f"Consegui extrair alguns dados, mas com baixa confiança:\n"
+            f"- Total identificado: {fmt(total)} (pode estar incorreto)\n"
+            f"- Estabelecimento: {name}\n"
+            f"- Data: {date_str}\n\n"
+            f"Antes de registrar, confirmas que o total de {fmt(total)} está correto "
+            f"e qual a categoria mais adequada? Aguardo tua confirmação."
+            f"{amount_tool_hint(total if isinstance(total, int) else None)}"
+        )
+
+    items_lines = "\n".join(
+        f"- {item['name']} — {fmt(item.get('unit_price'))} x {item.get('quantity', 1)}"
+        for item in items
+    ) or "- (itens não identificados)"
+
+    discount_line = f"Desconto aplicado: {fmt(discount)}\n" if discount else ""
+
+    return (
+        f"[Conciliação de nota fiscal]\n"
+        f"Estabelecimento: {name}\n"
+        f"Data da compra: {date_str}\n"
+        f"Total líquido: {fmt(total)}\n"
+        f"{discount_line}"
+        f"\nItens identificados:\n{items_lines}\n\n"
+        f"Por favor, registra essa compra como transação de despesa, usando a categoria "
+        f'mais adequada para "{name}", marcando como paga (is_paid=true) e com a data '
+        f"informada acima. Na descrição, inclua a lista completa de itens com seus preços."
+        f"{amount_tool_hint(total if isinstance(total, int) else None)}"
+    )
 
 
 class IaEngineService:
@@ -342,6 +437,23 @@ class IaEngineService:
             self._save_session(user_id, account_id, session)
             return
 
+        ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        if ext in IMAGE_EXTENSIONS:
+            async for event in self._process_receipt_upload(
+                user_id=user_id,
+                account_id=account_id,
+                message=message,
+                filename=filename,
+                raw_bytes=raw_bytes,
+                content_type=content_type or "image/jpeg",
+                transactions_service=transactions_service,
+                categories_service=categories_service,
+                subscriptions_service=subscriptions_service,
+                analytics_service=analytics_service,
+            ):
+                yield event
+            return
+
         combined_message = message.strip()
         if combined_message:
             combined_message = f"{combined_message}\n\n{safe_context}"
@@ -352,6 +464,58 @@ class IaEngineService:
             user_id=user_id,
             account_id=account_id,
             message=combined_message,
+            transactions_service=transactions_service,
+            categories_service=categories_service,
+            subscriptions_service=subscriptions_service,
+            analytics_service=analytics_service,
+        ):
+            yield event
+
+    async def _process_receipt_upload(
+        self,
+        user_id: int,
+        account_id: int,
+        message: str,
+        filename: str,
+        raw_bytes: bytes,
+        content_type: str,
+        transactions_service: TransactionsService,
+        categories_service: CategoriesService,
+        subscriptions_service: SubscriptionsService,
+        analytics_service: AnalyticsService,
+    ):
+        """
+        Fluxo de conciliação de nota fiscal via imagem.
+        Extrai dados com chamada de visão e delega ao chat_stream para
+        acionar create_transaction. A imagem nunca é persistida no Redis.
+        """
+        yield {"type": "status", "status": "thinking", "label": "Lendo a nota fiscal..."}
+
+        extracted = self._extract_receipt_data(raw_bytes, content_type)
+        confidence = extracted.get("confidence", "none")
+
+        if confidence == "none":
+            response = (
+                "Não consegui ler a nota fiscal. "
+                "Por favor, tente uma foto mais nítida e bem iluminada, "
+                "preferencialmente com boa resolução e sem reflexos."
+            )
+            for chunk in self._chunk_text(response):
+                yield {"type": "token", "token": chunk}
+                await asyncio.sleep(0)
+            # Persiste no Redis apenas o texto, nunca os bytes da imagem
+            session = self._load_session(user_id, account_id)
+            session.append({"role": "user", "content": message or f"[Imagem: {filename}]"})
+            session.append({"role": "assistant", "content": response})
+            self._save_session(user_id, account_id, session)
+            return
+
+        synthetic_message = _build_receipt_synthetic_message(extracted, filename, confidence)
+
+        async for event in self.chat_stream(
+            user_id=user_id,
+            account_id=account_id,
+            message=synthetic_message,
             transactions_service=transactions_service,
             categories_service=categories_service,
             subscriptions_service=subscriptions_service,
@@ -475,6 +639,43 @@ class IaEngineService:
                 f"[ia_engine] Falha ao montar contexto numérico para account_id={account_id}: {exc}"
             )
             return ""
+
+    def _extract_receipt_data(self, raw_bytes: bytes, content_type: str) -> dict:
+        """
+        Executa chamada de visão ao LLM para extração estruturada de dados de nota fiscal.
+        Retorna dict com confidence, total, itens etc.
+        Em caso de falha, retorna {"confidence": "none"} sem propagar exceção.
+        A imagem (base64) é transmitida ao LLM mas nunca persistida.
+        """
+        try:
+            b64 = base64.b64encode(raw_bytes).decode("utf-8")
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:{content_type};base64,{b64}"},
+                        },
+                        {"type": "text", "text": RECEIPT_EXTRACTION_PROMPT},
+                    ],
+                }
+            ]
+            result = self.ia.create_chat(
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=0.1,
+                max_tokens=1024,
+            )
+            if not isinstance(result, dict):
+                logger.warning("[ia_engine] _extract_receipt_data: resposta não é dict")
+                return {"confidence": "none"}
+            if result.get("confidence") not in {"high", "low", "none"}:
+                result["confidence"] = "low"
+            return result
+        except Exception as exc:
+            logger.warning(f"[ia_engine] Falha na extração de nota fiscal: {exc}")
+            return {"confidence": "none"}
 
     def _load_session(self, user_id: int, account_id: int) -> list[dict]:
         """Carrega sessão de chat do Redis. Cria nova sessão se não existir."""

@@ -1,10 +1,19 @@
 """
 Testes unitários para IaEngineService.
 
-Casos cobertos:
+Casos cobertos (v0.14):
   - Caso 4: historico_redis_isolado_por_account_id
   - Caso 5: get_summary_somente_account_id_sessao
   - Caso 3: resumo_injetado_coerente_com_get_summary
+
+Casos cobertos (v0.15 — conciliação de nota fiscal por imagem):
+  - test_extract_receipt_data_retorna_none_confidence_em_falha
+  - test_build_receipt_synthetic_message_high_confidence
+  - test_build_receipt_synthetic_message_low_confidence
+  - test_build_receipt_synthetic_message_sem_itens
+  - test_build_receipt_synthetic_message_desconto_presente
+  - test_build_receipt_synthetic_message_data_nula_usa_hoje
+  - test_imagem_nao_persiste_base64_no_redis
 """
 
 from unittest.mock import MagicMock, patch
@@ -14,6 +23,7 @@ import pytest
 from src.modules.ia_engine.ia_engine_service import (
     CHAT_SESSION_KEY_PREFIX,
     IaEngineService,
+    _build_receipt_synthetic_message,
 )
 from src.modules.transactions.dtos import TransactionSummaryResponse
 
@@ -160,3 +170,210 @@ def test_build_account_context_negative_balance(
 
     assert "-R$ 2.000.00" in result, "Saldo negativo deve exibir sinal de menos"
     assert "-R$ 1.500.00" in result, "Saldo realizado negativo deve exibir sinal de menos"
+
+
+# ---------------------------------------------------------------------------
+# Testes v0.15 — Conciliação de nota fiscal por imagem
+# ---------------------------------------------------------------------------
+
+def _make_ia_engine_service(ia_mock: MagicMock) -> IaEngineService:
+    """Instancia IaEngineService com dependências mínimas para testes unitários."""
+    service = IaEngineService.__new__(IaEngineService)
+    service.ia = ia_mock
+    service.cache = MagicMock()
+    service.ofx_import_repository = MagicMock()
+    return service
+
+
+def test_extract_receipt_data_retorna_none_confidence_em_falha():
+    """
+    Caso 8: se create_chat levantar exceção, _extract_receipt_data deve retornar
+    {"confidence": "none"} sem propagar a exceção.
+    """
+    ia_mock = MagicMock()
+    ia_mock.create_chat.side_effect = Exception("timeout")
+    service = _make_ia_engine_service(ia_mock)
+
+    result = service._extract_receipt_data(b"fake_bytes", "image/jpeg")
+
+    assert result == {"confidence": "none"}, (
+        "Falha de create_chat deve retornar confidence=none silenciosamente"
+    )
+
+
+def test_extract_receipt_data_retorna_none_confidence_quando_resposta_invalida():
+    """Se create_chat retornar None ou não-dict, deve retornar {"confidence": "none"}."""
+    ia_mock = MagicMock()
+    ia_mock.create_chat.return_value = None
+    service = _make_ia_engine_service(ia_mock)
+
+    result = service._extract_receipt_data(b"fake", "image/png")
+
+    assert result == {"confidence": "none"}
+
+
+def test_extract_receipt_data_normaliza_confidence_invalida():
+    """Se confidence retornada não for high/low/none, deve normalizar para 'low'."""
+    ia_mock = MagicMock()
+    ia_mock.create_chat.return_value = {
+        "confidence": "maybe",
+        "total": 5000,
+    }
+    service = _make_ia_engine_service(ia_mock)
+
+    result = service._extract_receipt_data(b"img", "image/webp")
+
+    assert result["confidence"] == "low"
+
+
+def test_build_receipt_synthetic_message_high_confidence():
+    """
+    Caso 1/4: mensagem high confidence deve conter estabelecimento, total formatado
+    e instrução de create_transaction com is_paid=true.
+    """
+    extracted = {
+        "confidence": "high",
+        "establishment_name": "Supermercado Atacadão",
+        "date": "2026-04-06",
+        "total": 15_750,  # R$ 157,50
+        "discount_total": None,
+        "items": [
+            {"name": "Arroz 5kg", "unit_price": 2_990, "quantity": 1},
+            {"name": "Feijão 1kg", "unit_price": 750, "quantity": 2},
+        ],
+    }
+
+    result = _build_receipt_synthetic_message(extracted, "nota.jpg", "high")
+
+    assert "Supermercado Atacadão" in result
+    assert "R$ 157.50" in result
+    assert "is_paid=true" in result
+    assert "Arroz 5kg" in result
+    assert "Feijão 1kg" in result
+    assert "2026-04-06" in result
+    assert "IMPORTANTE (create_transaction)" in result
+    assert '"157,50"' in result or "157,50" in result
+
+
+def test_build_receipt_synthetic_message_low_confidence():
+    """
+    Caso 6: mensagem low confidence deve pedir confirmação ao usuário
+    e não emitir instrução de create_transaction diretamente.
+    """
+    extracted = {
+        "confidence": "low",
+        "establishment_name": "Farmácia Popular",
+        "date": None,
+        "total": 8_000,
+        "discount_total": None,
+        "items": None,
+    }
+
+    result = _build_receipt_synthetic_message(extracted, "nota.png", "low")
+
+    assert "baixa confiança" in result
+    assert "confirmas" in result.lower() or "confirmação" in result.lower() or "Confirmas" in result
+    assert "is_paid=true" not in result
+
+
+def test_build_receipt_synthetic_message_sem_itens():
+    """
+    Caso unitário: items=None não deve lançar exceção e deve exibir
+    placeholder "(itens não identificados)".
+    """
+    extracted = {
+        "confidence": "high",
+        "establishment_name": "Loja X",
+        "date": "2026-04-01",
+        "total": 3_000,
+        "discount_total": None,
+        "items": None,
+    }
+
+    result = _build_receipt_synthetic_message(extracted, "nota.jpg", "high")
+
+    assert "(itens não identificados)" in result
+
+
+def test_build_receipt_synthetic_message_desconto_presente():
+    """Caso 3: quando discount_total presente, linha de desconto deve aparecer na mensagem."""
+    extracted = {
+        "confidence": "high",
+        "establishment_name": "Mercado Fiel",
+        "date": "2026-04-06",
+        "total": 10_000,    # R$ 100,00 líquido
+        "discount_total": 2_000,  # R$ 20,00 de desconto
+        "items": [],
+    }
+
+    result = _build_receipt_synthetic_message(extracted, "nota.jpg", "high")
+
+    assert "Desconto aplicado" in result
+    assert "R$ 20.00" in result
+
+
+def test_build_receipt_synthetic_message_data_nula_usa_hoje():
+    """Caso 5: quando date=None, a mensagem deve conter 'hoje' como fallback."""
+    extracted = {
+        "confidence": "high",
+        "establishment_name": "Posto Shell",
+        "date": None,
+        "total": 20_000,
+        "discount_total": None,
+        "items": [],
+    }
+
+    result = _build_receipt_synthetic_message(extracted, "nota.jpg", "high")
+
+    assert "hoje" in result
+
+
+def test_imagem_nao_persiste_base64_no_redis():
+    """
+    Caso 7 (P0): quando confidence=none, a sessão salva no Redis deve conter
+    apenas texto — nunca bytes de imagem ou conteúdo base64.
+    """
+    ia_mock = MagicMock()
+    service = _make_ia_engine_service(ia_mock)
+
+    # Simula _extract_receipt_data retornando confidence=none
+    service._extract_receipt_data = MagicMock(return_value={"confidence": "none"})
+    # Simula cache vazio (sessão nova)
+    service.cache.get.return_value = None
+
+    captured_sessions: list[str] = []
+
+    def fake_set(key: str, value: str, ttl: int = 0) -> None:
+        captured_sessions.append(value)
+
+    service.cache.set = fake_set
+
+    import asyncio
+
+    async def run():
+        events = []
+        async for event in service._process_receipt_upload(
+            user_id=1,
+            account_id=10,
+            message="",
+            filename="nota.jpg",
+            raw_bytes=b"\xff\xd8\xff" * 100,  # bytes simulados de imagem
+            content_type="image/jpeg",
+            transactions_service=MagicMock(),
+            categories_service=MagicMock(),
+            subscriptions_service=MagicMock(),
+            analytics_service=MagicMock(),
+        ):
+            events.append(event)
+        return events
+
+    asyncio.run(run())
+
+    assert captured_sessions, "save_session deve ter sido chamado"
+    saved_json = captured_sessions[0]
+    assert "base64" not in saved_json, "base64 não deve aparecer na sessão Redis"
+    assert "\xff" not in saved_json, "bytes brutos não devem aparecer na sessão Redis"
+    # Confirma que é JSON serializável (texto puro)
+    import json
+    parsed = json.loads(saved_json)
+    assert isinstance(parsed, list)

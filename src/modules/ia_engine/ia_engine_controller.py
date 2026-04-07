@@ -39,7 +39,7 @@ from .dtos import OfxImportResponse
 router = APIRouter(prefix="/ia", tags=["IA Engine"])
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".ofx"}
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".ofx"}
 
 
 # ------------------------------------------------------------------

@@ -26,6 +26,24 @@ from src.modules.transactions.dtos import CreateTransactionDTO, TransactionRespo
 from src.modules.transactions.transactions_service import TransactionsService
 
 
+def normalize_llm_transaction_amount(amount):
+    """
+    Ajusta o `amount` vindo da LLM antes de `CreateTransactionDTO`.
+
+    O DTO interpreta `int` como **reais inteiros** e multiplica por 100 para obter centavos.
+    A extração de nota fiscal e o modelo costumam enviar o total já em **centavos**
+    como inteiro (ex.: 16603 para R$ 166,03), o que gerava valor 100× maior.
+
+    Heurística: inteiros >= 1000 com centavos na parte monetária (resto % 100 != 0)
+    são convertidos para float em reais; demais inteiros seguem a regra legada do DTO.
+    """
+    if isinstance(amount, bool) or not isinstance(amount, int):
+        return amount
+    if amount >= 1000 and (amount % 100) != 0:
+        return float(amount) / 100.0
+    return amount
+
+
 class IaToolRegistry:
     def __init__(
         self,
@@ -133,7 +151,14 @@ class IaToolRegistry:
                         "type": "object",
                         "properties": {
                             "title": {"type": "string"},
-                            "amount": {"type": ["string", "integer", "number"]},
+                            "amount": {
+                                "type": ["string", "integer", "number"],
+                                "description": (
+                                    "Valor em reais: string pt-BR (ex.: \"166,03\") ou número "
+                                    "decimal (ex.: 166.03). Prefira string ou float; inteiros "
+                                    "grandes são tratados com heurística."
+                                ),
+                            },
                             "type": {"type": "string", "enum": ["income", "expense"]},
                             "due_date": {
                                 "type": "string",
@@ -400,7 +425,8 @@ class IaToolRegistry:
         user_id: int,
         account_id: int,
     ) -> dict:
-        payload = CreateTransactionDTO(**arguments)
+        args = {**arguments, "amount": normalize_llm_transaction_amount(arguments.get("amount"))}
+        payload = CreateTransactionDTO(**args)
         record = self.transactions_service.create(user_id, account_id, payload)
         serialized = TransactionResponse.model_validate(record).model_dump(mode="json")
         return {
