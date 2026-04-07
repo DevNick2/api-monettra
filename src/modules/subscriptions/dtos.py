@@ -1,17 +1,13 @@
-from datetime import datetime, date
-from enum import Enum
-from uuid import UUID
-
-from pydantic import BaseModel, UUID4, field_validator
 import re
+from datetime import date, datetime
+from enum import Enum
+
+from pydantic import UUID4, BaseModel, field_validator
 
 
 class RecurrenceType(str, Enum):
     MONTHLY = "monthly"
     YEARLY = "yearly"
-    BIANNUAL = "biannual"
-    QUARTERLY = "quarterly"
-    SEMIANNUAL = "semiannual"
 
 
 class PaymentMethod(str, Enum):
@@ -122,7 +118,7 @@ class SubscriptionResponse(BaseModel):
         reais_str = f"{reais:,}".replace(",", ".")
         return f"{reais_str},{centavos:02d}"
 
-    @field_validator("billing_date", mode="before") 
+    @field_validator("billing_date", mode="before")
     @classmethod
     def format_due_date(cls, v):
         if v is not None:
@@ -132,3 +128,22 @@ class SubscriptionResponse(BaseModel):
                 return date.fromisoformat(v[:10]).strftime("%d/%m/%Y")
             return str(v)
         return None
+
+
+class SubscriptionRenewalResponse(BaseModel):
+    code: UUID4
+    previous_billing_date: str
+    new_billing_date: str
+    days_overdue: int
+    renewed_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @field_validator("previous_billing_date", "new_billing_date", mode="before")
+    @classmethod
+    def format_date(cls, v):
+        if isinstance(v, date):
+            return v.strftime("%d/%m/%Y")
+        if isinstance(v, str) and "-" in v:
+            return date.fromisoformat(v[:10]).strftime("%d/%m/%Y")
+        return str(v) if v else v

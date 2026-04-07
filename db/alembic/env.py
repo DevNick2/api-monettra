@@ -7,17 +7,20 @@ Alembic env.py — Configuração do ambiente de migrations do projeto Monettra.
 """
 
 from logging.config import fileConfig
-from sqlalchemy import create_engine, pool
+
 from alembic import context
+from sqlalchemy import create_engine, pool
 
 # ---------------------------------------------------------------------------
 # Importar todos os schemas para que o autogenerate os detecte
 # Adicione novos schemas aqui conforme forem criados
 # ---------------------------------------------------------------------------
 from src.schemas.base import Base  # noqa: F401
-from src.schemas.users import UserSchema  # noqa: F401
 from src.schemas.categories import CategorySchema  # noqa: F401
+from src.schemas.subscription_renewals import SubscriptionRenewalSchema  # noqa: F401
+from src.schemas.subscriptions import SubscriptionSchema  # noqa: F401
 from src.schemas.transactions import TransactionSchema  # noqa: F401
+from src.schemas.users import UserSchema  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Ler variáveis de ambiente do .env.development

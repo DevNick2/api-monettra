@@ -1,26 +1,27 @@
 from dependency_injector import containers, providers
 from sqlalchemy.orm import sessionmaker
 
-from src.repository.user_repository import UserRepository
-from src.repository.transaction_repository import TransactionRepository
-from src.repository.category_repository import CategoryRepository
-from src.repository.account_repository import AccountRepository
-from src.repository.ofx_import_repository import OfxImportRepository
-from src.repository.credit_card_repository import CreditCardRepository
-from src.modules.auth.auth_service import AuthService
-from src.modules.transactions.transactions_service import TransactionsService
-from src.modules.categories.categories_service import CategoriesService
-from src.modules.analytics.analytics_service import AnalyticsService
-from src.repository.analytics_repository import AnalyticsRepository
-from src.shared.services.redis_service import RedisService
-from src.modules.planning.planning_service import PlanningService
-from src.repository.subscription_repository import SubscriptionRepository
-from src.modules.subscriptions.subscriptions_service import SubscriptionsService
 from src.modules.accounts.accounts_service import AccountsService
-from src.shared.services.ia_service import IaService
-from src.modules.ia_engine.ia_engine_service import IaEngineService
+from src.modules.analytics.analytics_service import AnalyticsService
+from src.modules.auth.auth_service import AuthService
+from src.modules.categories.categories_service import CategoriesService
 from src.modules.credit_cards.credit_cards_service import CreditCardsService
+from src.modules.ia_engine.ia_engine_service import IaEngineService
+from src.modules.planning.planning_service import PlanningService
+from src.modules.subscriptions.subscriptions_service import SubscriptionsService
+from src.modules.transactions.transactions_service import TransactionsService
 from src.modules.users.users_service import UsersService
+from src.repository.account_repository import AccountRepository
+from src.repository.analytics_repository import AnalyticsRepository
+from src.repository.category_repository import CategoryRepository
+from src.repository.credit_card_repository import CreditCardRepository
+from src.repository.ofx_import_repository import OfxImportRepository
+from src.repository.subscription_renewal_repository import SubscriptionRenewalRepository
+from src.repository.subscription_repository import SubscriptionRepository
+from src.repository.transaction_repository import TransactionRepository
+from src.repository.user_repository import UserRepository
+from src.shared.services.ia_service import IaService
+from src.shared.services.redis_service import RedisService
 
 from .postgres_services import PostgresServices
 
@@ -75,6 +76,7 @@ class ContainerService(containers.DeclarativeContainer):
     category_repository = providers.Factory(CategoryRepository, dbSession=db)
     analytics_repository = providers.Factory(AnalyticsRepository, db_session=db)
     subscription_repository = providers.Factory(SubscriptionRepository, dbSession=db)
+    subscription_renewal_repository = providers.Factory(SubscriptionRenewalRepository, dbSession=db)
     account_repository = providers.Factory(AccountRepository, dbSession=db)
     ofx_import_repository = providers.Factory(OfxImportRepository, dbSession=db)
     credit_card_repository = providers.Factory(CreditCardRepository, dbSession=db)
@@ -117,6 +119,7 @@ class ContainerService(containers.DeclarativeContainer):
         SubscriptionsService,
         repository=subscription_repository,
         transaction_repository=transaction_repository,
+        renewal_repository=subscription_renewal_repository,
         cache=redis_service,
     )
     accounts_service = providers.Factory(
