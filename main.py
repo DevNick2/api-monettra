@@ -1,14 +1,14 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from contextlib import asynccontextmanager
 
+from src.http.routes import router
+from src.shared.services.di_services import ContainerService
 from src.shared.utils.environment import env, environment
 from src.shared.utils.errors import http_exception_handler, validation_exception_handler
-from src.shared.services.di_services import ContainerService
-from src.http.routes import router
-import src.schemas  # Garante que todos os schemas sejam registrados no Base
 
 container = ContainerService()
 container.config.db.from_dict({
@@ -40,6 +40,8 @@ async def lifespan(app: FastAPI):
         "src.modules.accounts.accounts_controller",
         "src.modules.ia_engine.ia_engine_controller",
         "src.modules.credit_cards.credit_cards_controller",
+        "src.modules.admin.admin_controller",
+        "src.modules.feature_flags.feature_flags_controller",
     ])
     app.include_router(router)
     yield

@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, UUID4, field_validator
+from pydantic import BaseModel, Field, UUID4, field_validator
 from src.modules.categories.dtos import CategoryResponse
 import re
 
@@ -143,6 +143,33 @@ class UpdateTransactionDTO(BaseModel):
             if len(parts) == 3:
                 return date(int(parts[2]), int(parts[1]), int(parts[0]))
         return v
+
+
+class DuplicateTransactionDTO(BaseModel):
+    """DTO para duplicar um lançamento individual para uma nova data de destino."""
+    due_date: date
+
+    @field_validator("due_date", mode="before")
+    @classmethod
+    def parse_due_date(cls, v):
+        if isinstance(v, str) and "/" in v:
+            parts = v.split("/")
+            if len(parts) == 3:
+                return date(int(parts[2]), int(parts[1]), int(parts[0]))
+        return v
+
+
+class DuplicateMonthDTO(BaseModel):
+    """DTO para duplicar todas as transações elegíveis (DEFAULT) de um mês de origem para um mês de destino."""
+    source_month: int = Field(ge=1, le=12)
+    source_year: int = Field(ge=2000, le=2100)
+    target_month: int = Field(ge=1, le=12)
+    target_year: int = Field(ge=2000, le=2100)
+
+
+class DuplicateMonthResponse(BaseModel):
+    """Resposta da duplicação de mês — contagem de transações criadas."""
+    count: int
 
 
 class TransactionSummaryResponse(BaseModel):

@@ -1,6 +1,6 @@
+from datetime import datetime
 from pydantic import BaseModel, EmailStr
 from uuid import UUID
-from datetime import datetime
 from typing import Optional
 
 
@@ -33,3 +33,19 @@ class AccountResponse(BaseModel):
     members: list[AccountMemberResponse] = []
 
     model_config = {"from_attributes": True}
+
+
+class InviteResponse(BaseModel):
+    code: UUID
+    email: str
+    status: str
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RegisterViaInviteDTO(BaseModel):
+    name: str
+    password: str

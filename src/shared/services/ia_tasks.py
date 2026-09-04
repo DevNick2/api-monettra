@@ -14,21 +14,21 @@ import time  # noqa: F401 — mantido para compatibilidade futura com retries ma
 from datetime import datetime, timezone
 from uuid import UUID as PyUUID
 
+from ofxtools.Parser import OFXTree
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from src.repository.category_repository import CategoryRepository
+from src.repository.ia_token_usage_repository import IaTokenUsageRepository
+from src.repository.ofx_import_repository import OfxImportRepository
+from src.repository.transaction_repository import TransactionRepository
+from src.schemas.ia_token_usage import IaOperation
+from src.schemas.transactions import TransactionType
 from src.shared.services.celery_service import celery_service
 from src.shared.services.ia_service import IaService
 from src.shared.services.redis_service import RedisService
 from src.shared.utils.environment import environment
 from src.shared.utils.logger import logger
-from src.repository.ofx_import_repository import OfxImportRepository
-from src.repository.transaction_repository import TransactionRepository
-from src.repository.category_repository import CategoryRepository
-from src.schemas.transactions import TransactionType
-
-from ofxtools.Parser import OFXTree
-
 
 # ---------------------------------------------------------------------------
 # System Prompt de Classificação OFX (Structured Outputs)
@@ -331,6 +331,21 @@ def process_ofx_task(
                 response_format=OFX_CLASSIFICATION_SCHEMA,
                 max_tokens=8192,
             )
+
+            # Grava token usage do lote OFX (best-effort — falha silenciosa)
+            try:
+                if ia._last_usage:
+                    usage_repo = IaTokenUsageRepository(dbSession=session)
+                    usage_repo.create(
+                        account_id=account_id,
+                        user_id=user_id,
+                        operation=IaOperation.OFX,
+                        model=ia._last_usage.get("model", ia.model),
+                        tokens_input=ia._last_usage.get("tokens_input", 0),
+                        tokens_output=ia._last_usage.get("tokens_output", 0),
+                    )
+            except Exception as _usage_err:
+                logger.warning(f"OFX Task {import_code}: falha ao gravar token usage: {_usage_err}")
 
             logger.info(
                 f"OFX Task {import_code}: lote {batch_num}/{total_batches} — "

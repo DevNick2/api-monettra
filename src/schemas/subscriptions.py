@@ -11,6 +11,7 @@ from .base import BaseSchema
 
 if TYPE_CHECKING:
     from .accounts import AccountSchema
+    from .credit_cards import CreditCardSchema
     from .subscription_renewals import SubscriptionRenewalSchema
     from .transactions import TransactionSchema
     from .users import UserSchema
@@ -52,6 +53,11 @@ class SubscriptionSchema(BaseSchema):
         server_default="default",
     )
 
+    credit_card_id: Mapped[int | None] = mapped_column(
+        ForeignKey("credit_cards.id"), nullable=True, default=None
+    )
+    credit_card: Mapped[CreditCardSchema | None] = relationship(lazy="select")
+
     # Descrição/notas opcionais
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
@@ -72,3 +78,11 @@ class SubscriptionSchema(BaseSchema):
     @property
     def icon_name(self) -> str | None:
         return None
+
+    @property
+    def credit_card_code(self):
+        return self.credit_card.code if self.credit_card else None
+
+    @property
+    def credit_card_name(self) -> str | None:
+        return self.credit_card.name if self.credit_card else None

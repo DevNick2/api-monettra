@@ -1,4 +1,12 @@
 services:
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: mailhog
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # UI web (http://localhost:8025)
+    restart: unless-stopped
+
   redis:
     image: redis:7.2
     container_name: redis
@@ -42,6 +50,8 @@ services:
         condition: service_started
       db:
         condition: service_healthy
+      mailhog:
+        condition: service_started
     volumes:
       - ./:/app
       - /app/.venv
@@ -82,4 +92,3 @@ networks:
 volumes:
   redis_data:
   postgres_data:
-

@@ -12,14 +12,15 @@ Features:
   - Streaming via SSE (Server-Sent Events)
 """
 
-import json
 import asyncio
-from typing import Any, AsyncGenerator
+import json
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from openai import OpenAI
+
 from src.shared.utils.environment import environment
 from src.shared.utils.logger import logger
-
 
 # ---------------------------------------------------------------------------
 # Configuração de retry
@@ -33,6 +34,8 @@ class IaService:
     def __init__(self):
         api_key = environment.get("OPENROUTER_API_KEY")
         self._model = environment.get("OPENROUTER_MODEL", "openrouter/free")
+        # Armazena usage da última chamada create_chat bem-sucedida (best-effort)
+        self._last_usage: dict | None = None
 
         try:
             self.client = OpenAI(
@@ -105,6 +108,17 @@ class IaService:
                 completion = self.client.chat.completions.create(**kwargs)
                 message = completion.choices[0].message
                 raw_content = message.content
+
+                # Captura uso de tokens para auditoria (best-effort — não afeta o fluxo)
+                try:
+                    usage = completion.usage
+                    self._last_usage = {
+                        "model": completion.model or self._model,
+                        "tokens_input": usage.prompt_tokens if usage else 0,
+                        "tokens_output": usage.completion_tokens if usage else 0,
+                    }
+                except Exception:
+                    self._last_usage = None
 
                 if return_message:
                     return message.model_dump()
@@ -207,8 +221,8 @@ class IaService:
                 lines = cleaned.split("\n")
                 # Remove primeira e última linha (```json e ```)
                 lines = [
-                    l for l in lines
-                    if not l.strip().startswith("```")
+                    line for line in lines
+                    if not line.strip().startswith("```")
                 ]
                 cleaned = "\n".join(lines)
 

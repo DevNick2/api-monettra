@@ -16,6 +16,7 @@ from dateutil.relativedelta import relativedelta
 from fastapi import HTTPException, status
 from sqlalchemy import select
 
+from src.modules.credit_cards.credit_cards_service import CreditCardsService
 from src.repository.subscription_repository import SubscriptionRepository
 from src.schemas.subscriptions import (
     RecurrenceType as SchemaRecurrenceType,
@@ -37,10 +38,12 @@ class SubscriptionsService:
         cache: RedisService,
         transaction_repository=None,
         renewal_repository=None,
+        credit_card_repository=None,
     ):
         self.repository = repository
         self.transaction_repository = transaction_repository
         self.renewal_repository = renewal_repository
+        self.credit_card_repository = credit_card_repository
         self.cache = cache
 
     def find_all(self, account_id: int) -> list:
@@ -56,6 +59,11 @@ class SubscriptionsService:
                 detail="O valor da assinatura deve ser positivo",
             )
 
+        credit_card_id = None
+        if data.credit_card_code and self.credit_card_repository:
+            card = self.credit_card_repository.find_by_code(data.credit_card_code, account_id)
+            credit_card_id = card.id if card else None
+
         try:
             record = self.repository.create({
                 "provider": data.provider,
@@ -65,20 +73,21 @@ class SubscriptionsService:
                 "is_active": data.is_active,
                 "description": data.description,
                 "payment_method": SchemaPaymentMethod[data.payment_method.value.upper()],
+                "credit_card_id": credit_card_id,
                 "user_id": user_id,  # Legacy
                 "account_id": account_id,
             })
-            
+
             # XXX TODO :: Refatorar, por que não usar o transactions_service.create ou bulk_create?
             if self.transaction_repository:
                 recurrence_id = uuid.uuid4()
                 start = data.billing_date or date.today()
-                
+
                 records = []
                 for month in range(start.month, 13):
                     last_day = calendar.monthrange(start.year, month)[1]
                     day = min(start.day, last_day)
-                    
+
                     records.append({
                         "title": data.provider,
                         "amount": data.amount,
@@ -94,8 +103,13 @@ class SubscriptionsService:
                         "category_id": None,
                         "subscription_id": record.id,
                         "recurrence_id": recurrence_id,
-                    })                
-                self.transaction_repository.bulk_create(records)
+                    })
+                created_transactions = self.transaction_repository.bulk_create(records)
+
+                if credit_card_id:
+                    for transaction in created_transactions:
+                        self._link_transaction_to_invoice(transaction, record)
+
                 self.cache.delete_pattern(f"transactions:aid:{account_id}:*")
 
             return record
@@ -165,6 +179,27 @@ class SubscriptionsService:
             subscription.description = data.description
         if data.payment_method is not None:
             subscription.payment_method = SchemaPaymentMethod[data.payment_method.value.upper()]
+
+        if data.credit_card_code is not None:
+            previous_credit_card_id = subscription.credit_card_id
+            new_credit_card_id = None
+            if self.credit_card_repository:
+                card = self.credit_card_repository.find_by_code(data.credit_card_code, account_id)
+                new_credit_card_id = card.id if card else None
+
+            subscription.credit_card_id = new_credit_card_id
+
+            migrated_to_card = previous_credit_card_id is None and new_credit_card_id is not None
+            if migrated_to_card and self.transaction_repository:
+                pending_without_invoice = self.transaction_repository.session.execute(
+                    select(TransactionSchema).where(
+                        TransactionSchema.subscription_id == subscription.id,
+                        TransactionSchema.invoice_id == None,  # noqa: E711
+                        TransactionSchema.deleted_at == None,  # noqa: E711
+                    )
+                ).scalars().all()
+                for tx in pending_without_invoice:
+                    self._link_transaction_to_invoice(tx, subscription)
 
         self.cache.delete_pattern(f"transactions:aid:{account_id}:*")
 
@@ -238,6 +273,30 @@ class SubscriptionsService:
 
     def _invalidate_account_cache(self, account_id: int) -> None:
         self.cache.delete_pattern(f"transactions:aid:{account_id}:*")
+
+    def _link_transaction_to_invoice(self, transaction, subscription) -> None:
+        """
+        Vincula uma transação de assinatura à fatura correta do cartão.
+        Usa a data da transação para resolver mês/ano do ciclo da fatura.
+        Falha silenciosa — não interrompe o fluxo principal se o cartão não existir.
+        """
+        if not subscription.credit_card_id or not self.credit_card_repository:
+            return
+        try:
+            card = self.credit_card_repository.find_by_id(subscription.credit_card_id)
+            if not card:
+                return
+            invoice_month, invoice_year = CreditCardsService._resolve_invoice_cycle(
+                transaction.due_date, card.closing_day
+            )
+            invoice = self.credit_card_repository.get_or_create_invoice(
+                card.id, invoice_month, invoice_year
+            )
+            transaction.invoice_id = invoice.id
+            invoice.total_amount += transaction.amount
+            self.transaction_repository.session.flush()
+        except Exception as exc:
+            logger.warning(f"[subscriptions] Falha ao vincular transação à fatura: {exc}")
 
     def remove(self, account_id: int, subscription_code: UUID):
         subscription = self.repository.find_by_code(subscription_code, account_id)

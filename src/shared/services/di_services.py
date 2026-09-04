@@ -2,6 +2,7 @@ from dependency_injector import containers, providers
 from sqlalchemy.orm import sessionmaker
 
 from src.modules.accounts.accounts_service import AccountsService
+from src.modules.admin.admin_service import AdminService
 from src.modules.analytics.analytics_service import AnalyticsService
 from src.modules.auth.auth_service import AuthService
 from src.modules.categories.categories_service import CategoriesService
@@ -11,15 +12,19 @@ from src.modules.planning.planning_service import PlanningService
 from src.modules.subscriptions.subscriptions_service import SubscriptionsService
 from src.modules.transactions.transactions_service import TransactionsService
 from src.modules.users.users_service import UsersService
+from src.repository.account_invite_repository import AccountInviteRepository
 from src.repository.account_repository import AccountRepository
 from src.repository.analytics_repository import AnalyticsRepository
 from src.repository.category_repository import CategoryRepository
 from src.repository.credit_card_repository import CreditCardRepository
+from src.repository.feature_flag_repository import FeatureFlagRepository
+from src.repository.ia_token_usage_repository import IaTokenUsageRepository
 from src.repository.ofx_import_repository import OfxImportRepository
 from src.repository.subscription_renewal_repository import SubscriptionRenewalRepository
 from src.repository.subscription_repository import SubscriptionRepository
 from src.repository.transaction_repository import TransactionRepository
 from src.repository.user_repository import UserRepository
+from src.shared.services.email_service import EmailService
 from src.shared.services.ia_service import IaService
 from src.shared.services.redis_service import RedisService
 
@@ -78,13 +83,21 @@ class ContainerService(containers.DeclarativeContainer):
     subscription_repository = providers.Factory(SubscriptionRepository, dbSession=db)
     subscription_renewal_repository = providers.Factory(SubscriptionRenewalRepository, dbSession=db)
     account_repository = providers.Factory(AccountRepository, dbSession=db)
+    account_invite_repository = providers.Factory(AccountInviteRepository, dbSession=db)
     ofx_import_repository = providers.Factory(OfxImportRepository, dbSession=db)
     credit_card_repository = providers.Factory(CreditCardRepository, dbSession=db)
+    ia_token_usage_repository = providers.Factory(IaTokenUsageRepository, dbSession=db)
+    feature_flag_repository = providers.Factory(FeatureFlagRepository, dbSession=db)
 
     # ---------------------------------------------------------------------------
     # Cache
     # ---------------------------------------------------------------------------
     redis_service = providers.Singleton(RedisService)
+
+    # ---------------------------------------------------------------------------
+    # E-mail
+    # ---------------------------------------------------------------------------
+    email_service = providers.Singleton(EmailService)
 
     # ---------------------------------------------------------------------------
     # IA
@@ -96,6 +109,13 @@ class ContainerService(containers.DeclarativeContainer):
     # ---------------------------------------------------------------------------
     users_service = providers.Factory(UsersService, repository=userRepository)
     auth_service = providers.Factory(AuthService, repository=userRepository)
+    admin_service = providers.Factory(
+        AdminService,
+        user_repository=userRepository,
+        account_repository=account_repository,
+        token_usage_repository=ia_token_usage_repository,
+        feature_flag_repository=feature_flag_repository,
+    )
     transactions_service = providers.Factory(
         TransactionsService,
         repository=transaction_repository,
@@ -120,18 +140,22 @@ class ContainerService(containers.DeclarativeContainer):
         repository=subscription_repository,
         transaction_repository=transaction_repository,
         renewal_repository=subscription_renewal_repository,
+        credit_card_repository=credit_card_repository,
         cache=redis_service,
     )
     accounts_service = providers.Factory(
         AccountsService,
         repository=account_repository,
         user_repository=userRepository,
+        invite_repository=account_invite_repository,
+        email_service=email_service,
     )
     ia_engine_service = providers.Factory(
         IaEngineService,
         ia=ia_service,
         ofx_import_repository=ofx_import_repository,
         cache=redis_service,
+        token_usage_repository=ia_token_usage_repository,
     )
     credit_cards_service = providers.Factory(
         CreditCardsService,

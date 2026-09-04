@@ -14,6 +14,9 @@ from .dtos import (
     CreateTransactionDTO,
     BatchCreateTransactionDTO,
     UpdateTransactionDTO,
+    DuplicateTransactionDTO,
+    DuplicateMonthDTO,
+    DuplicateMonthResponse,
     TransactionResponse,
     TransactionSummaryResponse,
 )
@@ -81,6 +84,39 @@ async def create_batch_transactions(
     service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
 ):
     return service.create_batch(current_user["uid"], account_id, body)
+
+
+@router.post(
+    "/duplicate-month",
+    response_model=DuplicateMonthResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Duplica as transações elegíveis (DEFAULT) de um mês de origem para um mês de destino"
+)
+@inject
+async def duplicate_month(
+    body: DuplicateMonthDTO,
+    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
+    service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
+):
+    return service.duplicate_month(current_user["uid"], account_id, body)
+
+
+@router.post(
+    "/{code}/duplicate",
+    response_model=TransactionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Duplica um lançamento individual para a due_date de destino"
+)
+@inject
+async def duplicate_transaction(
+    code: UUID,
+    body: DuplicateTransactionDTO,
+    current_user: dict = Depends(get_current_user),
+    account_id: int = Depends(get_current_account_id),
+    service: TransactionsService = Depends(Provide[ContainerService.transactions_service])
+):
+    return service.duplicate(current_user["uid"], account_id, code, body)
 
 
 @router.patch(

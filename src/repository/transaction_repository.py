@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session, joinedload, contains_eager
 from sqlalchemy import select, extract, func, case
 
-from src.schemas.transactions import TransactionSchema, TransactionType
+from src.schemas.transactions import TransactionSchema, TransactionType, TransactionClassification
 from src.schemas.categories import CategorySchema
 
 class TransactionRepository:
@@ -43,6 +43,40 @@ class TransactionRepository:
             .where(TransactionSchema.account_id == account_id)
             .where(TransactionSchema.deleted_at == None)  # noqa: E711
         ).scalars().first()
+
+    def find_by_code_ignore_account(self, code: UUID) -> TransactionSchema | None:
+        """
+        Busca uma transação pelo code sem filtrar por account_id.
+        Usado quando a checagem de account isolation precisa distinguir
+        entre "não encontrada" (404) e "pertence a outra conta" (403).
+        """
+        return self.session.execute(
+            select(TransactionSchema)
+            .where(TransactionSchema.code == code)
+            .where(TransactionSchema.deleted_at == None)  # noqa: E711
+        ).scalars().first()
+
+    def find_default_by_month(
+        self,
+        account_id: int,
+        month: int,
+        year: int,
+    ) -> list[TransactionSchema]:
+        """
+        Retorna as transações elegíveis para duplicação de mês:
+        type_of_transaction = DEFAULT, sem subscription_id/invoice_id,
+        no mês/ano informado, dentro da conta ativa.
+        """
+        return self.session.execute(
+            select(TransactionSchema)
+            .where(TransactionSchema.account_id == account_id)
+            .where(TransactionSchema.deleted_at == None)  # noqa: E711
+            .where(TransactionSchema.type_of_transaction == TransactionClassification.DEFAULT)
+            .where(TransactionSchema.subscription_id == None)  # noqa: E711
+            .where(TransactionSchema.invoice_id == None)  # noqa: E711
+            .where(extract("month", TransactionSchema.due_date) == month)
+            .where(extract("year", TransactionSchema.due_date) == year)
+        ).scalars().all()
 
     def create(self, data: dict) -> TransactionSchema:
         transaction = TransactionSchema(**data)

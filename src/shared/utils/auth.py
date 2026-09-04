@@ -7,10 +7,10 @@ Variáveis de ambiente: JWT_SECRET_KEY, JWT_ALGORITHM, JWT_EXPIRE_MINUTES
 
 from datetime import datetime, timedelta, timezone
 
-from jose import jwt, JWTError
-from passlib.context import CryptContext
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 from src.shared.utils.environment import environment
 
@@ -129,5 +129,22 @@ def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Acesso restrito a administradores"
+        )
+    return current_user
+
+
+def require_admin_scope(current_user: dict = Depends(get_current_user)) -> dict:
+    """
+    FastAPI Dependency — valida tipo 'admin' E scope 'admin' no JWT.
+
+    Garante que tokens de usuários comuns (sem scope admin) não acessem /admin/*.
+
+    Raises:
+        HTTPException(403): Se type != 'admin' ou scope != 'admin'.
+    """
+    if current_user.get("type") != "admin" or current_user.get("scope") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso restrito ao painel administrativo"
         )
     return current_user

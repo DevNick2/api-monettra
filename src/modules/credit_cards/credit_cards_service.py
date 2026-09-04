@@ -17,16 +17,17 @@ from fastapi import HTTPException, status
 from src.repository.credit_card_repository import CreditCardRepository
 from src.repository.transaction_repository import TransactionRepository
 from src.schemas.credit_cards import CreditCardSchema, InvoiceSchema
-from src.schemas.transactions import TransactionType, TransactionClassification
+from src.schemas.transactions import TransactionClassification, TransactionType
 from src.shared.services.redis_service import RedisService
 from src.shared.utils.logger import logger
+
 from .dtos import (
-    CreateCreditCardDTO,
-    UpdateCreditCardDTO,
-    CreditCardResponse,
     CreateCreditCardChargeDTO,
+    CreateCreditCardDTO,
+    CreditCardResponse,
     InvoiceResponse,
     InvoiceTransactionItem,
+    UpdateCreditCardDTO,
 )
 
 
@@ -285,6 +286,7 @@ class CreditCardsService:
                 code=t.code,
                 title=t.title,
                 amount=t.amount,
+                amount_cents=t.amount,
                 due_date=t.due_date,
                 is_paid=t.is_paid,
                 description=t.description,

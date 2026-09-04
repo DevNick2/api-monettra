@@ -22,7 +22,9 @@ from src.modules.categories.categories_service import CategoriesService
 from src.modules.ia_engine.dtos import OfxImportResponse
 from src.modules.subscriptions.subscriptions_service import SubscriptionsService
 from src.modules.transactions.transactions_service import TransactionsService
+from src.repository.ia_token_usage_repository import IaTokenUsageRepository
 from src.repository.ofx_import_repository import OfxImportRepository
+from src.schemas.ia_token_usage import IaOperation
 from src.shared.services.ia_service import IaService
 from src.shared.services.ia_tasks import process_ofx_task
 from src.shared.services.ia_tools import IaToolRegistry
@@ -180,10 +182,36 @@ class IaEngineService:
         ia: IaService,
         ofx_import_repository: OfxImportRepository,
         cache: RedisService,
+        token_usage_repository: IaTokenUsageRepository | None = None,
     ):
         self.ia = ia
         self.ofx_import_repository = ofx_import_repository
         self.cache = cache
+        self.token_usage_repository = token_usage_repository
+
+    def _record_token_usage(
+        self,
+        account_id: int,
+        user_id: int | None,
+        operation: IaOperation,
+    ) -> None:
+        """Grava consumo de tokens de IA. Falha silenciosa — não interrompe o fluxo."""
+        if not self.token_usage_repository:
+            return
+        usage = self.ia._last_usage
+        if not usage:
+            return
+        try:
+            self.token_usage_repository.create(
+                account_id=account_id,
+                user_id=user_id,
+                operation=operation,
+                model=usage.get("model", self.ia.model),
+                tokens_input=usage.get("tokens_input", 0),
+                tokens_output=usage.get("tokens_output", 0),
+            )
+        except Exception as e:
+            logger.warning(f"IA token usage: falha ao gravar — {e}")
 
     # ------------------------------------------------------------------
     # Chat Streaming
@@ -249,6 +277,7 @@ class IaEngineService:
             max_tokens=1536,
             return_message=True,
         )
+        self._record_token_usage(account_id, user_id, IaOperation.CHAT)
 
         if not assistant_message:
             yield {
@@ -341,6 +370,7 @@ class IaEngineService:
                 max_tokens=1536,
                 return_message=True,
             )
+            self._record_token_usage(account_id, user_id, IaOperation.TOOL)
 
             if not assistant_message:
                 yield {

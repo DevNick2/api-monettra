@@ -2,7 +2,7 @@ from __future__ import annotations
 from enum import Enum as PyEnum
 from typing import TYPE_CHECKING, List
 
-from sqlalchemy import String, Enum
+from sqlalchemy import Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import BaseSchema
@@ -31,6 +31,9 @@ class UserSchema(BaseSchema):
         Enum(UserType, name="user_type", native_enum=True),
         nullable=False,
         default=UserType.USER
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
     )
 
     # Relationships

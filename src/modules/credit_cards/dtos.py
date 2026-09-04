@@ -1,8 +1,7 @@
-from datetime import date, datetime
-from uuid import UUID
-
 import re
-from pydantic import BaseModel, UUID4, field_validator
+from datetime import date, datetime
+
+from pydantic import UUID4, BaseModel, field_validator
 
 
 def _parse_amount(v) -> int:
@@ -139,8 +138,14 @@ class InvoiceTransactionItem(BaseModel):
     is_paid: bool
     description: str | None
     installment_label: str | None = None
+    amount_cents: int = 0
 
     model_config = {"from_attributes": True}
+
+    @field_validator("amount_cents", mode="before")
+    @classmethod
+    def set_amount_cents(cls, v):
+        return int(v)
 
     @field_validator("amount", mode="before")
     @classmethod

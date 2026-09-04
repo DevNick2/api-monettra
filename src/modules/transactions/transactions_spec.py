@@ -5,6 +5,7 @@ Cobertura:
   - v0.8: create() aplica regra de data automaticamente
   - v0.8: update() recalcula is_paid ao trocar data
   - v0.9: get_summary() retorna e cacheia TransactionSummaryResponse
+  - v0.18: duplicate() e duplicate_month() — duplicação de lançamentos
 """
 
 import json
@@ -12,6 +13,7 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from src.modules.transactions.transactions_service import (
     TransactionsService,
@@ -20,8 +22,11 @@ from src.modules.transactions.transactions_service import (
 from src.modules.transactions.dtos import (
     CreateTransactionDTO,
     UpdateTransactionDTO,
+    DuplicateTransactionDTO,
+    DuplicateMonthDTO,
     TransactionSummaryResponse,
 )
+from src.schemas.transactions import TransactionType, TransactionClassification
 from src.shared.services.ia_tools import normalize_llm_transaction_amount
 
 
@@ -275,3 +280,154 @@ def test_get_summary_empty_month_returns_zeros():
     result = service.get_summary(account_id=1, month=1, year=2026)
     assert result.net_balance == 0
     assert result.paid_net_balance == 0
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TransactionsService.duplicate — duplicação de lançamento individual (v0.18)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _make_original_transaction(**overrides):
+    defaults = dict(
+        account_id=1,
+        title="Aluguel",
+        amount=150000,
+        type=TransactionType.EXPENSE,
+        description="Aluguel mensal",
+        category_id=5,
+        owner_id=7,
+        subscription_id=None,
+        invoice_id=None,
+        due_date=date(2026, 7, 10),
+    )
+    defaults.update(overrides)
+    t = MagicMock()
+    for key, value in defaults.items():
+        setattr(t, key, value)
+    return t
+
+
+def test_duplicate_transaction_creates_copy_with_chosen_date_unpaid():
+    """Cenário 1 — duplicar item: cópia nasce com a data escolhida e is_paid=False."""
+    service, mock_repo, _ = _make_service()
+    original = _make_original_transaction()
+    mock_repo.find_by_code_ignore_account.return_value = original
+    mock_repo.create.return_value = MagicMock()
+
+    payload = DuplicateTransactionDTO(due_date=date(2026, 8, 15))
+    service.duplicate(user_id=2, account_id=1, transaction_code="some-uuid", data=payload)
+
+    call_kwargs = mock_repo.create.call_args[0][0]
+    assert call_kwargs["due_date"] == date(2026, 8, 15)
+    assert call_kwargs["is_paid"] is False
+    assert call_kwargs["paid_at"] is None
+    assert call_kwargs["title"] == "Aluguel"
+    assert call_kwargs["amount"] == 150000
+    assert call_kwargs["created_by"] == 2
+    assert call_kwargs["owner_id"] == 7
+
+
+def test_duplicate_subscription_or_invoice_transaction_becomes_standalone():
+    """Cenário 2 — duplicar lançamento de assinatura/fatura vira avulso (DEFAULT)."""
+    service, mock_repo, _ = _make_service()
+    original = _make_original_transaction(subscription_id=42, invoice_id=None)
+    mock_repo.find_by_code_ignore_account.return_value = original
+    mock_repo.create.return_value = MagicMock()
+
+    payload = DuplicateTransactionDTO(due_date=date(2026, 9, 1))
+    service.duplicate(user_id=1, account_id=1, transaction_code="some-uuid", data=payload)
+
+    call_kwargs = mock_repo.create.call_args[0][0]
+    assert call_kwargs["type_of_transaction"] == TransactionClassification.DEFAULT
+    assert call_kwargs["subscription_id"] is None
+    assert call_kwargs["invoice_id"] is None
+    assert call_kwargs["recurrence_id"] is None
+
+
+def test_duplicate_endpoints_reject_transaction_outside_active_account():
+    """Account isolation — transação de outra conta deve retornar 403."""
+    service, mock_repo, _ = _make_service()
+    other_account_transaction = _make_original_transaction(account_id=99)
+    mock_repo.find_by_code_ignore_account.return_value = other_account_transaction
+
+    payload = DuplicateTransactionDTO(due_date=date(2026, 8, 1))
+    with pytest.raises(HTTPException) as exc_info:
+        service.duplicate(user_id=1, account_id=1, transaction_code="some-uuid", data=payload)
+
+    assert exc_info.value.status_code == 403
+
+
+def test_duplicate_raises_404_when_transaction_not_found():
+    service, mock_repo, _ = _make_service()
+    mock_repo.find_by_code_ignore_account.return_value = None
+
+    payload = DuplicateTransactionDTO(due_date=date(2026, 8, 1))
+    with pytest.raises(HTTPException) as exc_info:
+        service.duplicate(user_id=1, account_id=1, transaction_code="some-uuid", data=payload)
+
+    assert exc_info.value.status_code == 404
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TransactionsService.duplicate_month — duplicação em lote (v0.18)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def test_duplicate_month_copies_only_default_transactions_unpaid():
+    """Cenário 3 — duplicar mês: repositório já filtra DEFAULT; cópias nascem is_paid=False."""
+    service, mock_repo, _ = _make_service()
+    t1 = _make_original_transaction(title="Mercado", amount=20000, due_date=date(2026, 7, 10))
+    t2 = _make_original_transaction(title="Aluguel", amount=150000, due_date=date(2026, 7, 5))
+    mock_repo.find_default_by_month.return_value = [t1, t2]
+    mock_repo.bulk_create.return_value = [MagicMock(), MagicMock()]
+
+    payload = DuplicateMonthDTO(source_month=7, source_year=2026, target_month=8, target_year=2026)
+    result = service.duplicate_month(user_id=1, account_id=1, data=payload)
+
+    mock_repo.find_default_by_month.assert_called_once_with(1, 7, 2026)
+    records = mock_repo.bulk_create.call_args[0][0]
+    assert len(records) == 2
+    assert all(r["is_paid"] is False and r["paid_at"] is None for r in records)
+    assert all(r["type_of_transaction"] == TransactionClassification.DEFAULT for r in records)
+    assert all(r["subscription_id"] is None and r["invoice_id"] is None for r in records)
+    assert result.count == 2
+
+
+def test_duplicate_month_with_no_eligible_transactions_returns_zero():
+    """Cenário 4 — mês de origem sem transações elegíveis retorna count=0, nada é criado."""
+    service, mock_repo, _ = _make_service()
+    mock_repo.find_default_by_month.return_value = []
+
+    payload = DuplicateMonthDTO(source_month=1, source_year=2026, target_month=2, target_year=2026)
+    result = service.duplicate_month(user_id=1, account_id=1, data=payload)
+
+    assert result.count == 0
+    mock_repo.bulk_create.assert_not_called()
+
+
+def test_duplicate_month_appends_without_overwriting_existing_target_month():
+    """Cenário 5 — duplicar mês nunca lê, edita ou remove lançamentos do mês de destino."""
+    service, mock_repo, _ = _make_service()
+    t1 = _make_original_transaction(title="Internet", amount=15000, due_date=date(2026, 7, 20))
+    mock_repo.find_default_by_month.return_value = [t1]
+    mock_repo.bulk_create.return_value = [MagicMock()]
+
+    payload = DuplicateMonthDTO(source_month=7, source_year=2026, target_month=8, target_year=2026)
+    service.duplicate_month(user_id=1, account_id=1, data=payload)
+
+    mock_repo.soft_delete.assert_not_called()
+    mock_repo.bulk_soft_delete.assert_not_called()
+    mock_repo.update.assert_not_called()
+    mock_repo.bulk_create.assert_called_once()
+
+
+def test_duplicate_month_recalculates_due_date_for_shorter_target_month():
+    """Requisito funcional 8 da Spec — dia 31 em mês de origem ajusta para o último dia do destino."""
+    service, mock_repo, _ = _make_service()
+    t1 = _make_original_transaction(title="Conta", amount=10000, due_date=date(2026, 1, 31))
+    mock_repo.find_default_by_month.return_value = [t1]
+    mock_repo.bulk_create.return_value = [MagicMock()]
+
+    payload = DuplicateMonthDTO(source_month=1, source_year=2026, target_month=2, target_year=2026)
+    service.duplicate_month(user_id=1, account_id=1, data=payload)
+
+    records = mock_repo.bulk_create.call_args[0][0]
+    assert records[0]["due_date"] == date(2026, 2, 28)  # 2026 não é bissexto

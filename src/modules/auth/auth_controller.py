@@ -1,14 +1,15 @@
-from fastapi import APIRouter, Depends
 from dependency_injector.wiring import Provide, inject
+from fastapi import APIRouter, Depends
 
-from src.shared.services.di_services import ContainerService
-from src.shared.utils.auth import get_current_user
-from src.modules.auth.auth_service import AuthService
-from .dtos import RegisterDTO, LoginDTO, TokenResponse, UserResponse, GoogleCallbackDTO
-from src.schemas.categories import DEFAULT_CATEGORIES
-from src.modules.categories.categories_service import CategoriesService
 from src.modules.accounts.accounts_service import AccountsService
 from src.modules.accounts.dtos import CreateAccountDTO
+from src.modules.auth.auth_service import AuthService
+from src.modules.categories.categories_service import CategoriesService
+from src.schemas.categories import DEFAULT_CATEGORIES
+from src.shared.services.di_services import ContainerService
+from src.shared.utils.auth import get_current_user
+
+from .dtos import GoogleCallbackDTO, LoginDTO, RegisterDTO, TokenResponse, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -71,6 +72,19 @@ async def login(
     service: AuthService = Depends(Provide[ContainerService.auth_service])
 ):
     return service.login(body)
+
+
+@router.post(
+    "/admin/login",
+    response_model=TokenResponse,
+    summary="Autentica um administrador e retorna JWT com scope admin"
+)
+@inject
+async def admin_login(
+    body: LoginDTO,
+    service: AuthService = Depends(Provide[ContainerService.auth_service])
+):
+    return service.admin_login(body)
 
 
 @router.get(

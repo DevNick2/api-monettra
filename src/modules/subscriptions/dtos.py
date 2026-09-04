@@ -58,6 +58,7 @@ class CreateSubscriptionDTO(BaseModel):
     description: str | None = None
     icon_name: str | None = None
     payment_method: PaymentMethod = PaymentMethod.DEFAULT
+    credit_card_code: UUID4 | None = None
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -80,6 +81,7 @@ class UpdateSubscriptionDTO(BaseModel):
     description: str | None = None
     icon_name: str | None = None
     payment_method: PaymentMethod | None = None
+    credit_card_code: UUID4 | None = None
 
     @field_validator("amount", mode="before")
     @classmethod
@@ -105,9 +107,21 @@ class SubscriptionResponse(BaseModel):
     description: str | None
     icon_name: str | None
     payment_method: PaymentMethod = PaymentMethod.DEFAULT
+    credit_card_code: UUID4 | None = None
+    credit_card_name: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_validator("credit_card_code", mode="before")
+    @classmethod
+    def format_credit_card_code(cls, v):
+        return v.code if hasattr(v, "code") else v
+
+    @field_validator("credit_card_name", mode="before")
+    @classmethod
+    def format_credit_card_name(cls, v):
+        return v.name if hasattr(v, "name") else v
 
     @field_validator("amount", mode="before")
     @classmethod

@@ -2,24 +2,21 @@
 AuthService — Regras de negócio de autenticação.
 """
 
-from uuid import UUID
+import secrets
 from typing import TYPE_CHECKING
 
 import httpx
-import secrets
-
 from fastapi import HTTPException, status
 
 from src.repository.user_repository import UserRepository
-from src.shared.utils.logger import logger
 from src.shared.utils.auth import create_access_token, hash_password, verify_password
-from src.shared.utils.environment import environment
-from .dtos import RegisterDTO, LoginDTO, GoogleCallbackDTO
+from src.shared.utils.logger import logger
+
+from .dtos import GoogleCallbackDTO, LoginDTO, RegisterDTO
 
 if TYPE_CHECKING:
-    from src.modules.categories.categories_service import CategoriesService
     from src.modules.accounts.accounts_service import AccountsService
-    from src.modules.accounts.dtos import CreateAccountDTO
+    from src.modules.categories.categories_service import CategoriesService
 
 # XXX FIXME :: Isso deveria estar em uma ENV
 GOOGLE_TOKENINFO_URL = "https://www.googleapis.com/oauth2/v3/tokeninfo"
@@ -70,6 +67,7 @@ class AuthService:
 
         Raises:
             HTTPException(401): Credenciais inválidas.
+            HTTPException(403): Conta desativada.
         """
         user = self.repository.find_by_email(data.email)
         if not user or not verify_password(data.password, user.password):
@@ -78,10 +76,53 @@ class AuthService:
                 detail="Credenciais inválidas"
             )
 
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Conta desativada"
+            )
+
         token = create_access_token({
             "sub": str(user.code),
             "uid": user.id,
             "type": user.type.value
+        })
+        return {"access_token": token, "token_type": "bearer"}
+
+    def admin_login(self, data: LoginDTO) -> dict:
+        """
+        Autentica um usuário ADMIN e emite JWT com scope 'admin'.
+
+        Raises:
+            HTTPException(401): Credenciais inválidas.
+            HTTPException(403): Usuário não é admin ou conta desativada.
+        """
+        from src.schemas.users import UserType
+
+        user = self.repository.find_by_email(data.email)
+        if not user or not verify_password(data.password, user.password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Credenciais inválidas"
+            )
+
+        if user.type != UserType.ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Acesso restrito a administradores"
+            )
+
+        if not user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Conta desativada"
+            )
+
+        token = create_access_token({
+            "sub": str(user.code),
+            "uid": user.id,
+            "type": user.type.value,
+            "scope": "admin",
         })
         return {"access_token": token, "token_type": "bearer"}
 
@@ -145,8 +186,8 @@ class AuthService:
 
         # 4. Criar categorias e conta para novos usuários
         if is_new_user:
-            from src.schemas.categories import DEFAULT_CATEGORIES
             from src.modules.accounts.dtos import CreateAccountDTO
+            from src.schemas.categories import DEFAULT_CATEGORIES
             accounts_service.create_account(
                 user.id,
                 CreateAccountDTO(name=f"Conta de {user.name or user.email}")

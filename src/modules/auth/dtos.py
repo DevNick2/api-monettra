@@ -1,7 +1,7 @@
-from pydantic import BaseModel, EmailStr
-from uuid import UUID
 from datetime import datetime
-from typing import Optional
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr
 
 
 class RegisterDTO(BaseModel):
@@ -37,5 +37,5 @@ class GoogleCallbackDTO(BaseModel):
     """
     id_token: str
     # Avatar e display_name opcionais (fallback caso o ID token não tenha)
-    display_name: Optional[str] = None
-    avatar_url: Optional[str] = None
+    display_name: str | None = None
+    avatar_url: str | None = None

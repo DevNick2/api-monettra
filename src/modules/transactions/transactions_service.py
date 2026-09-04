@@ -24,10 +24,13 @@ from .dtos import (
     CreateTransactionDTO,
     BatchCreateTransactionDTO,
     UpdateTransactionDTO,
+    DuplicateTransactionDTO,
+    DuplicateMonthDTO,
+    DuplicateMonthResponse,
     TransactionResponse,
     TransactionSummaryResponse,
 )
-from src.schemas.transactions import TransactionType
+from src.schemas.transactions import TransactionType, TransactionClassification
 from src.schemas.categories import CategorySchema
 from src.schemas.users import UserSchema
 from src.schemas.accounts import AccountMemberSchema
@@ -249,6 +252,115 @@ class TransactionsService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Erro interno ao criar lote de transações"
+            )
+
+    def duplicate(
+        self,
+        user_id: int,
+        account_id: int,
+        transaction_code: UUID,
+        data: DuplicateTransactionDTO,
+    ):
+        """
+        Duplica um lançamento individual para a due_date informada.
+        A cópia nasce sempre avulsa (DEFAULT, sem subscription/invoice/recurrence)
+        e não paga, independentemente da classificação/status da original.
+        """
+        transaction = self.repository.find_by_code_ignore_account(transaction_code)
+
+        if not transaction:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Transação não encontrada",
+            )
+
+        if transaction.account_id != account_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Transação não pertence à conta ativa",
+            )
+
+        try:
+            record = self.repository.create({
+                "title": transaction.title,
+                "amount": transaction.amount,
+                "type": transaction.type,
+                "due_date": data.due_date,
+                "description": transaction.description,
+                "is_paid": False,
+                "paid_at": None,
+                "type_of_transaction": TransactionClassification.DEFAULT,
+                "subscription_id": None,
+                "invoice_id": None,
+                "recurrence_id": None,
+                "user_id": user_id,
+                "created_by": user_id,
+                "account_id": transaction.account_id,
+                "category_id": transaction.category_id,
+                "owner_id": transaction.owner_id,
+            })
+
+            _invalidate_account_cache(self.cache, account_id)
+            return record
+        except Exception as e:
+            logger.error(f"Erro ao duplicar transação: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erro interno ao duplicar transação"
+            )
+
+    def duplicate_month(
+        self,
+        user_id: int,
+        account_id: int,
+        data: DuplicateMonthDTO,
+    ) -> DuplicateMonthResponse:
+        """
+        Duplica todas as transações elegíveis (type_of_transaction = DEFAULT,
+        sem subscription_id/invoice_id) do mês de origem para o mês de destino.
+        Não afeta lançamentos já existentes no mês de destino.
+        Roda em uma única transação de banco (bulk insert).
+        """
+        source_transactions = self.repository.find_default_by_month(
+            account_id, data.source_month, data.source_year
+        )
+
+        if not source_transactions:
+            return DuplicateMonthResponse(count=0)
+
+        records = []
+        for t in source_transactions:
+            last_day = calendar.monthrange(data.target_year, data.target_month)[1]
+            day = min(t.due_date.day, last_day)
+            due = date(data.target_year, data.target_month, day)
+            records.append({
+                "title": t.title,
+                "amount": t.amount,
+                "type": t.type,
+                "due_date": due,
+                "description": t.description,
+                "is_paid": False,
+                "paid_at": None,
+                "type_of_transaction": TransactionClassification.DEFAULT,
+                "subscription_id": None,
+                "invoice_id": None,
+                "recurrence_id": None,
+                "user_id": user_id,
+                "created_by": user_id,
+                "account_id": account_id,
+                "category_id": t.category_id,
+                "owner_id": t.owner_id,
+            })
+
+        try:
+            created = self.repository.bulk_create(records)
+            _invalidate_account_cache(self.cache, account_id)
+            return DuplicateMonthResponse(count=len(created))
+        except Exception as e:
+            logger.error(f"Erro ao duplicar mês: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Erro interno ao duplicar lançamentos do mês"
             )
 
     def mark_as_paid(self, account_id: int, transaction_code: UUID):
